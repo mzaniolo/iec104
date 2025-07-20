@@ -1,0 +1,10 @@
+experimental = ["setup-scripts"]
+
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+store-success-output = true
+store-failure-output = true
