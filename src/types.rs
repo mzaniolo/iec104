@@ -1,0 +1,348 @@
+pub mod commands;
+pub mod information_elements;
+pub mod measurements;
+pub mod parameters;
+pub mod quality_descriptors;
+pub mod time;
+
+pub use commands::{
+	CBoNa1, CBoTa1, CCdNa1, CCiNa1, CCsNa1, CIcNa1, CRdNa1, CRpNa1, CScNa1, CScTa1, CSeNa1, CSeNb1,
+	CSeNc1, CSeTa1, CSeTb1, CSeTc1, CTsNa1, CTsTa1, CdcNa1, CdcTa1, CrcNa1, CrcTa1,
+};
+pub use measurements::{
+	MBoNa1, MBoTb1, MDpNa1, MDpTa1, MDpTb1, MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1,
+	MItNa1, MItTb1, MMeNa1, MMeNb1, MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1,
+	MPsNa1, MSpNa1, MSpTa1, MSpTb1, MStNa1, MStTa1, MStTb1,
+};
+pub use parameters::{PAcNa1, PMeNa1, PMeNb1, PMeNc1};
+use snafu::Snafu;
+
+use crate::{error::SpanTraceWrapper, types::time::TimeConversionError, types_id::TypeId};
+
+pub trait FromBytes: Sized {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>>;
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub), context(suffix(false)))]
+pub enum ParseError {
+	#[snafu(display("Time conversion error"))]
+	ParseTimeTag {
+		source: TimeConversionError,
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+	#[snafu(display("Invalid type"))]
+	InvalidType {
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+	#[snafu(display("Not implemented yet"))]
+	NotImplemented {
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+}
+
+pub trait ToBytes {
+	fn to_bytes(&self) -> Vec<u8>;
+}
+
+pub struct GenericObject<T: FromBytes> {
+	address: u32,
+	object: T,
+}
+
+pub enum InformationObject {
+	MSpNa1(Vec<GenericObject<MSpNa1>>),
+	MSpTa1(Vec<GenericObject<MSpTa1>>),
+	MDpNa1(Vec<GenericObject<MDpNa1>>),
+	MDpTa1(Vec<GenericObject<MDpTa1>>),
+	MStNa1(Vec<GenericObject<MStNa1>>),
+	MStTa1(Vec<GenericObject<MStTa1>>),
+	MBoNa1(Vec<GenericObject<MBoNa1>>),
+	MMeNa1(Vec<GenericObject<MMeNa1>>),
+	MMeTa1(Vec<GenericObject<MMeTa1>>),
+	MMeNb1(Vec<GenericObject<MMeNb1>>),
+	MMeTb1(Vec<GenericObject<MMeTb1>>),
+	MMeNc1(Vec<GenericObject<MMeNc1>>),
+	MMeTc1(Vec<GenericObject<MMeTc1>>),
+	MItNa1(Vec<GenericObject<MItNa1>>),
+	MEpTa1(Vec<GenericObject<MEpTa1>>),
+	MEpTb1(Vec<GenericObject<MEpTb1>>),
+	MEpTc1(Vec<GenericObject<MEpTc1>>),
+	MPsNa1(Vec<GenericObject<MPsNa1>>),
+	MMeNd1(Vec<GenericObject<MMeNd1>>),
+	MSpTb1(Vec<GenericObject<MSpTb1>>),
+	MDpTb1(Vec<GenericObject<MDpTb1>>),
+	MStTb1(Vec<GenericObject<MStTb1>>),
+	MBoTb1(Vec<GenericObject<MBoTb1>>),
+	MMeTd1(Vec<GenericObject<MMeTd1>>),
+	MMeTe1(Vec<GenericObject<MMeTe1>>),
+	MMeTf1(Vec<GenericObject<MMeTf1>>),
+	MItTb1(Vec<GenericObject<MItTb1>>),
+	MEpTd1(Vec<GenericObject<MEpTd1>>),
+	MEpTe1(Vec<GenericObject<MEpTe1>>),
+	MEpTf1(Vec<GenericObject<MEpTf1>>),
+	MEiNa1(Vec<GenericObject<MEiNa1>>),
+	CScNa1(Vec<GenericObject<CScNa1>>),
+	CdcNa1(Vec<GenericObject<CdcNa1>>),
+	CrcNa1(Vec<GenericObject<CrcNa1>>),
+	CSeNa1(Vec<GenericObject<CSeNa1>>),
+	CSeNb1(Vec<GenericObject<CSeNb1>>),
+	CSeNc1(Vec<GenericObject<CSeNc1>>),
+	CBoNa1(Vec<GenericObject<CBoNa1>>),
+	CScTa1(Vec<GenericObject<CScTa1>>),
+	CdcTa1(Vec<GenericObject<CdcTa1>>),
+	CrcTa1(Vec<GenericObject<CrcTa1>>),
+	CSeTa1(Vec<GenericObject<CSeTa1>>),
+	CSeTb1(Vec<GenericObject<CSeTb1>>),
+	CSeTc1(Vec<GenericObject<CSeTc1>>),
+	CBoTa1(Vec<GenericObject<CBoTa1>>),
+	CIcNa1(Vec<GenericObject<CIcNa1>>),
+	CCiNa1(Vec<GenericObject<CCiNa1>>),
+	CRdNa1(Vec<GenericObject<CRdNa1>>),
+	CCsNa1(Vec<GenericObject<CCsNa1>>),
+	CTsNa1(Vec<GenericObject<CTsNa1>>),
+	CRpNa1(Vec<GenericObject<CRpNa1>>),
+	CCdNa1(Vec<GenericObject<CCdNa1>>),
+	CTsTa1(Vec<GenericObject<CTsTa1>>),
+	PMeNa1(Vec<GenericObject<PMeNa1>>),
+	PMeNb1(Vec<GenericObject<PMeNb1>>),
+	PMeNc1(Vec<GenericObject<PMeNc1>>),
+	PAcNa1(Vec<GenericObject<PAcNa1>>),
+}
+
+impl InformationObject {
+	fn build_objects<T: FromBytes>(
+		type_id: TypeId,
+		sequence: bool,
+		num_objs: u8,
+		bytes: &[u8],
+	) -> Result<Vec<GenericObject<T>>, Box<ParseError>> {
+		let object_size = type_id.size();
+
+		Ok(if sequence {
+			let mut objs = Vec::<GenericObject<T>>::with_capacity(num_objs as usize);
+			let first_addr = u32::from_be_bytes([0, bytes[2], bytes[1], bytes[0]]);
+			let first_obj = T::from_bytes(&bytes[3..object_size])?;
+			objs.push(GenericObject { address: first_addr, object: first_obj });
+			let other_objs = bytes[object_size..]
+				.chunks(object_size)
+				.enumerate()
+				.map(|(i, chunk)| {
+					// If it's a sequence we only get the address of the first object. So the first
+					// object has object_size + 3 bytes for the address. The subsequent chunks only
+					// have the object_size.
+					// Since the i starts at 0, we need to add 1 to the address.
+					let address = first_addr + (i as u32) + 1;
+					let object = T::from_bytes(&chunk[3..])?;
+					Ok(GenericObject { address, object })
+				})
+				.collect::<Result<Vec<_>, Box<ParseError>>>()?;
+			objs.extend(other_objs);
+			objs
+		} else {
+			// If it's not a sequence we get the address of each object in the first 3
+			// bytes.
+			bytes[0..]
+				.chunks(object_size + 3)
+				.map(|chunk| {
+					let address = u32::from_be_bytes([0, chunk[2], chunk[1], chunk[0]]);
+					let object = T::from_bytes(&chunk[3..])?;
+					Ok(GenericObject { address, object })
+				})
+				.collect::<Result<Vec<_>, Box<ParseError>>>()?
+		})
+	}
+
+	#[allow(clippy::too_many_lines)]
+	pub fn from_bytes(
+		type_id: TypeId,
+		sequence: bool,
+		num_objs: u8,
+		bytes: &[u8],
+	) -> Result<Self, Box<ParseError>> {
+		Ok(match type_id {
+			TypeId::M_SP_NA_1 => InformationObject::MSpNa1(Self::build_objects::<MSpNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_SP_TA_1 => InformationObject::MSpTa1(Self::build_objects::<MSpTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_DP_NA_1 => InformationObject::MDpNa1(Self::build_objects::<MDpNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_DP_TA_1 => InformationObject::MDpTa1(Self::build_objects::<MDpTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ST_NA_1 => InformationObject::MStNa1(Self::build_objects::<MStNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ST_TA_1 => InformationObject::MStTa1(Self::build_objects::<MStTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_BO_NA_1 => InformationObject::MBoNa1(Self::build_objects::<MBoNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_NA_1 => InformationObject::MMeNa1(Self::build_objects::<MMeNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TA_1 => InformationObject::MMeTa1(Self::build_objects::<MMeTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_NB_1 => InformationObject::MMeNb1(Self::build_objects::<MMeNb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TB_1 => InformationObject::MMeTb1(Self::build_objects::<MMeTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_NC_1 => InformationObject::MMeNc1(Self::build_objects::<MMeNc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TC_1 => InformationObject::MMeTc1(Self::build_objects::<MMeTc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_IT_NA_1 => InformationObject::MItNa1(Self::build_objects::<MItNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TA_1 => InformationObject::MEpTa1(Self::build_objects::<MEpTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TB_1 => InformationObject::MEpTb1(Self::build_objects::<MEpTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TC_1 => InformationObject::MEpTc1(Self::build_objects::<MEpTc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_PS_NA_1 => InformationObject::MPsNa1(Self::build_objects::<MPsNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_ND_1 => InformationObject::MMeNd1(Self::build_objects::<MMeNd1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_SP_TB_1 => InformationObject::MSpTb1(Self::build_objects::<MSpTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_DP_TB_1 => InformationObject::MDpTb1(Self::build_objects::<MDpTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ST_TB_1 => InformationObject::MStTb1(Self::build_objects::<MStTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_BO_TB_1 => InformationObject::MBoTb1(Self::build_objects::<MBoTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TD_1 => InformationObject::MMeTd1(Self::build_objects::<MMeTd1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TE_1 => InformationObject::MMeTe1(Self::build_objects::<MMeTe1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_ME_TF_1 => InformationObject::MMeTf1(Self::build_objects::<MMeTf1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_IT_TB_1 => InformationObject::MItTb1(Self::build_objects::<MItTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TD_1 => InformationObject::MEpTd1(Self::build_objects::<MEpTd1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TE_1 => InformationObject::MEpTe1(Self::build_objects::<MEpTe1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EP_TF_1 => InformationObject::MEpTf1(Self::build_objects::<MEpTf1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::M_EI_NA_1 => InformationObject::MEiNa1(Self::build_objects::<MEiNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SC_NA_1 => InformationObject::CScNa1(Self::build_objects::<CScNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_DC_NA_1 => InformationObject::CdcNa1(Self::build_objects::<CdcNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_RC_NA_1 => InformationObject::CrcNa1(Self::build_objects::<CrcNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_NA_1 => InformationObject::CSeNa1(Self::build_objects::<CSeNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_NB_1 => InformationObject::CSeNb1(Self::build_objects::<CSeNb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_NC_1 => InformationObject::CSeNc1(Self::build_objects::<CSeNc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_BO_NA_1 => InformationObject::CBoNa1(Self::build_objects::<CBoNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SC_TA_1 => InformationObject::CScTa1(Self::build_objects::<CScTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_DC_TA_1 => InformationObject::CdcTa1(Self::build_objects::<CdcTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_RC_TA_1 => InformationObject::CrcTa1(Self::build_objects::<CrcTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_TA_1 => InformationObject::CSeTa1(Self::build_objects::<CSeTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_TB_1 => InformationObject::CSeTb1(Self::build_objects::<CSeTb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_SE_TC_1 => InformationObject::CSeTc1(Self::build_objects::<CSeTc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_BO_TA_1 => InformationObject::CBoTa1(Self::build_objects::<CBoTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_IC_NA_1 => InformationObject::CIcNa1(Self::build_objects::<CIcNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_CI_NA_1 => InformationObject::CCiNa1(Self::build_objects::<CCiNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_RD_NA_1 => InformationObject::CRdNa1(Self::build_objects::<CRdNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_CS_NA_1 => InformationObject::CCsNa1(Self::build_objects::<CCsNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_TS_NA_1 => InformationObject::CTsNa1(Self::build_objects::<CTsNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_RP_NA_1 => InformationObject::CRpNa1(Self::build_objects::<CRpNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_CD_NA_1 => InformationObject::CCdNa1(Self::build_objects::<CCdNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::C_TS_TA_1 => InformationObject::CTsTa1(Self::build_objects::<CTsTa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::P_ME_NA_1 => InformationObject::PMeNa1(Self::build_objects::<PMeNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::P_ME_NB_1 => InformationObject::PMeNb1(Self::build_objects::<PMeNb1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::P_ME_NC_1 => InformationObject::PMeNc1(Self::build_objects::<PMeNc1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::P_AC_NA_1 => InformationObject::PAcNa1(Self::build_objects::<PAcNa1>(
+				type_id, sequence, num_objs, bytes,
+			)?),
+			TypeId::F_FR_NA_1
+			| TypeId::F_SR_NA_1
+			| TypeId::F_SC_NA_1
+			| TypeId::F_LS_NA_1
+			| TypeId::F_FA_NA_1
+			| TypeId::F_SG_NA_1
+			| TypeId::F_DR_TA_1 => NotImplemented.fail()?,
+			TypeId::Invalid => InvalidType.fail()?,
+		})
+	}
+}

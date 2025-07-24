@@ -1,10 +1,13 @@
 [package]
-name = "IEC-60870-5-104"
+name = "iec-60870-5-104"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-
+snafu = "0.8.6"
+time = { version = "0.3.41", features = ["local-offset"] }
+tracing = "0.1.41"
+tracing-error = "0.2.1"
 
 [lints.rust]
 dead_code = "warn"

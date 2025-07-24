@@ -1,0 +1,3 @@
+[default.extend-words]
+nd = "nd"   # part of a command
+sie = "sie" # a structure of information element
