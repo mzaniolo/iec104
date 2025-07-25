@@ -1,12 +1,11 @@
 use snafu::ResultExt as _;
-use time::PrimitiveDateTime;
 use tracing::instrument;
 
 use crate::types::{
 	FromBytes, ParseError, ParseTimeTag,
 	information_elements::*,
-	quality_descriptors::Qds,
-	time::{time_from_cp24time2a, time_from_cp56time2a},
+	quality_descriptors::{Qdp, Qds},
+	time::{Cp16Time2a, Cp24Time2a, Cp56Time2a},
 };
 
 /// Single-point
@@ -30,14 +29,14 @@ pub struct MSpTa1 {
 	/// Single-point with quality descriptor
 	pub siq: Siq,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MSpTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let siq = Siq::from_byte(bytes[0]);
-		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[1..4]).context(ParseTimeTag)?;
 		Ok(Self { siq, time })
 	}
 }
@@ -63,14 +62,14 @@ pub struct MDpTa1 {
 	/// Double point information with quality descriptor
 	pub diq: Diq,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MDpTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let diq = Diq::from_byte(bytes[0]);
-		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[1..4]).context(ParseTimeTag)?;
 		Ok(Self { diq, time })
 	}
 }
@@ -96,14 +95,14 @@ pub struct MStTa1 {
 	/// Value with transient state indication
 	pub vti: Vti,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MStTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let vti = Vti::from_byte(&bytes[0..2]);
-		let time = time_from_cp24time2a(&bytes[2..5]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[2..5]).context(ParseTimeTag)?;
 		Ok(Self { vti, time })
 	}
 }
@@ -152,7 +151,7 @@ pub struct MMeTa1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MMeTa1 {
@@ -160,7 +159,7 @@ impl FromBytes for MMeTa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
-		let time = time_from_cp24time2a(&bytes[3..6]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[3..6]).context(ParseTimeTag)?;
 		Ok(Self { nva, qds, time })
 	}
 }
@@ -191,7 +190,7 @@ pub struct MMeTb1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MMeTb1 {
@@ -199,7 +198,7 @@ impl FromBytes for MMeTb1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
-		let time = time_from_cp24time2a(&bytes[3..6]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[3..6]).context(ParseTimeTag)?;
 		Ok(Self { sva, qds, time })
 	}
 }
@@ -230,7 +229,7 @@ pub struct MMeTc1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MMeTc1 {
@@ -238,7 +237,7 @@ impl FromBytes for MMeTc1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
-		let time = time_from_cp24time2a(&bytes[5..8]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[5..8]).context(ParseTimeTag)?;
 		Ok(Self { r32, qds, time })
 	}
 }
@@ -266,16 +265,19 @@ impl FromBytes for MItNa1 {
 pub struct MEpTa1 {
 	/// Single event of protection equipment
 	pub sep: Sep,
+	/// Elapsed time
+	pub elapsed: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MEpTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sep = Sep::from_byte(bytes[0]);
-		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
-		Ok(Self { sep, time })
+		let elapsed = Cp16Time2a::from_bytes(&bytes[1..3]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[3..6]).context(ParseTimeTag)?;
+		Ok(Self { sep, elapsed, time })
 	}
 }
 
@@ -284,16 +286,22 @@ impl FromBytes for MEpTa1 {
 pub struct MEpTb1 {
 	/// Start events of protection equipment
 	pub start_ep: StartEp,
+	/// Quality descriptor of protection equipment
+	pub qdp: Qdp,
+	///  Relay duration time
+	pub relay_duration: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MEpTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let start_ep = StartEp::from_byte(bytes[0]);
-		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
-		Ok(Self { start_ep, time })
+		let qdp = Qdp::from_byte(bytes[1]);
+		let relay_duration = Cp16Time2a::from_bytes(&bytes[2..4]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[4..7]).context(ParseTimeTag)?;
+		Ok(Self { start_ep, qdp, relay_duration, time })
 	}
 }
 
@@ -302,16 +310,22 @@ impl FromBytes for MEpTb1 {
 pub struct MEpTc1 {
 	/// Output circuit information
 	pub oci: Oci,
+	/// Quality descriptor of protection equipment
+	pub qdp: Qdp,
+	/// Relay operation time
+	pub relay_op_time: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp24Time2a,
 }
 
 impl FromBytes for MEpTc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let oci = Oci::from_byte(bytes[0]);
-		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
-		Ok(Self { oci, time })
+		let qdp = Qdp::from_byte(bytes[1]);
+		let relay_op_time = Cp16Time2a::from_bytes(&bytes[2..4]).context(ParseTimeTag)?;
+		let time = Cp24Time2a::from_bytes(&bytes[4..7]).context(ParseTimeTag)?;
+		Ok(Self { oci, qdp, relay_op_time, time })
 	}
 }
 
@@ -354,14 +368,14 @@ pub struct MSpTb1 {
 	/// Single-point with quality descriptor
 	pub siq: Siq,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MSpTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let siq = Siq::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { siq, time })
 	}
 }
@@ -372,14 +386,14 @@ pub struct MDpTb1 {
 	/// Double point information with quality descriptor
 	pub diq: Diq,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MDpTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let diq = Diq::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { diq, time })
 	}
 }
@@ -390,14 +404,14 @@ pub struct MStTb1 {
 	/// Value with transient state indication
 	pub vti: Vti,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MStTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let vti = Vti::from_byte(&bytes[0..2]);
-		let time = time_from_cp56time2a(&bytes[2..9]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[2..9]).context(ParseTimeTag)?;
 		Ok(Self { vti, time })
 	}
 }
@@ -410,7 +424,7 @@ pub struct MBoTb1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MBoTb1 {
@@ -418,7 +432,7 @@ impl FromBytes for MBoTb1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
-		let time = time_from_cp56time2a(&bytes[5..12]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[5..12]).context(ParseTimeTag)?;
 		Ok(Self { bsi, qds, time })
 	}
 }
@@ -431,7 +445,7 @@ pub struct MMeTd1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MMeTd1 {
@@ -439,7 +453,7 @@ impl FromBytes for MMeTd1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
-		let time = time_from_cp56time2a(&bytes[3..10]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
 		Ok(Self { nva, qds, time })
 	}
 }
@@ -452,7 +466,7 @@ pub struct MMeTe1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MMeTe1 {
@@ -460,7 +474,7 @@ impl FromBytes for MMeTe1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
-		let time = time_from_cp56time2a(&bytes[3..10]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
 		Ok(Self { sva, qds, time })
 	}
 }
@@ -473,7 +487,7 @@ pub struct MMeTf1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MMeTf1 {
@@ -481,7 +495,7 @@ impl FromBytes for MMeTf1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
-		let time = time_from_cp56time2a(&bytes[5..12]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[5..12]).context(ParseTimeTag)?;
 		Ok(Self { r32, qds, time })
 	}
 }
@@ -494,7 +508,7 @@ pub struct MItTb1 {
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MItTb1 {
@@ -502,7 +516,7 @@ impl FromBytes for MItTb1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bcr = Bcr::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
-		let time = time_from_cp56time2a(&bytes[5..12]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[5..12]).context(ParseTimeTag)?;
 		Ok(Self { bcr, qds, time })
 	}
 }
@@ -512,16 +526,19 @@ impl FromBytes for MItTb1 {
 pub struct MEpTd1 {
 	/// Single event of protection equipment
 	pub sep: Sep,
+	/// Elapsed time
+	pub elapsed: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MEpTd1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sep = Sep::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
-		Ok(Self { sep, time })
+		let elapsed = Cp16Time2a::from_bytes(&bytes[1..3]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
+		Ok(Self { sep, elapsed, time })
 	}
 }
 
@@ -530,16 +547,22 @@ impl FromBytes for MEpTd1 {
 pub struct MEpTe1 {
 	/// Start events of protection equipment
 	pub start_ep: StartEp,
+	/// Quality descriptor of protection equipment
+	pub qdp: Qdp,
+	/// Relay duration time
+	pub relay_duration: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MEpTe1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let start_ep = StartEp::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
-		Ok(Self { start_ep, time })
+		let qdp = Qdp::from_byte(bytes[1]);
+		let relay_duration = Cp16Time2a::from_bytes(&bytes[2..4]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[4..11]).context(ParseTimeTag)?;
+		Ok(Self { start_ep, qdp, relay_duration, time })
 	}
 }
 
@@ -549,16 +572,22 @@ impl FromBytes for MEpTe1 {
 pub struct MEpTf1 {
 	/// Output circuit information
 	pub oci: Oci,
+	/// Quality descriptor of protection equipment
+	pub qdp: Qdp,
+	/// Relay operation time
+	pub relay_op_time: Cp16Time2a,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for MEpTf1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let oci = Oci::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
-		Ok(Self { oci, time })
+		let qdp = Qdp::from_byte(bytes[1]);
+		let relay_op_time = Cp16Time2a::from_bytes(&bytes[2..4]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[4..11]).context(ParseTimeTag)?;
+		Ok(Self { oci, qdp, relay_op_time, time })
 	}
 }
 

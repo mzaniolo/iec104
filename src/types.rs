@@ -18,7 +18,7 @@ pub use parameters::{PAcNa1, PMeNa1, PMeNb1, PMeNc1};
 use snafu::Snafu;
 use tracing::instrument;
 
-use crate::{error::SpanTraceWrapper, types::time::TimeConversionError, types_id::TypeId};
+use crate::{error::SpanTraceWrapper, types::time::ParseTimeError, types_id::TypeId};
 
 pub trait FromBytes: Sized {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>>;
@@ -29,7 +29,7 @@ pub trait FromBytes: Sized {
 pub enum ParseError {
 	#[snafu(display("Time conversion error"))]
 	ParseTimeTag {
-		source: TimeConversionError,
+		source: ParseTimeError,
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},

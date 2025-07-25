@@ -1,12 +1,11 @@
 use snafu::ResultExt as _;
-use time::PrimitiveDateTime;
 use tracing::instrument;
 
 use crate::types::{
 	FromBytes, ParseError, ParseTimeTag,
 	information_elements::{Bsi, Dpi, Nva, R32, SelectExecute, Spi, Sva},
 	quality_descriptors::Qos,
-	time::time_from_cp56time2a,
+	time::{Cp16Time2a, Cp56Time2a},
 };
 
 /// Command qualifier
@@ -397,14 +396,14 @@ pub struct CScTa1 {
 	/// Single command
 	pub sco: Sco,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CScTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sco = Sco::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { sco, time })
 	}
 }
@@ -415,14 +414,14 @@ pub struct CdcTa1 {
 	/// Double command
 	pub dco: Dco,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CdcTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let dco = Dco::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { dco, time })
 	}
 }
@@ -433,14 +432,14 @@ pub struct CrcTa1 {
 	/// Regulating step command
 	pub rco: Rco,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CrcTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let rco = Rco::from_byte(bytes[0]);
-		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { rco, time })
 	}
 }
@@ -453,7 +452,7 @@ pub struct CSeTa1 {
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CSeTa1 {
@@ -461,7 +460,7 @@ impl FromBytes for CSeTa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qos = Qos::from_byte(bytes[2]);
-		let time = time_from_cp56time2a(&bytes[3..10]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
 		Ok(Self { nva, qos, time })
 	}
 }
@@ -474,7 +473,7 @@ pub struct CSeTb1 {
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CSeTb1 {
@@ -482,7 +481,7 @@ impl FromBytes for CSeTb1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qos = Qos::from_byte(bytes[2]);
-		let time = time_from_cp56time2a(&bytes[3..10]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
 		Ok(Self { sva, qos, time })
 	}
 }
@@ -495,7 +494,7 @@ pub struct CSeTc1 {
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CSeTc1 {
@@ -503,7 +502,7 @@ impl FromBytes for CSeTc1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qos = Qos::from_byte(bytes[4]);
-		let time = time_from_cp56time2a(&bytes[5..12]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[5..12]).context(ParseTimeTag)?;
 		Ok(Self { r32, qos, time })
 	}
 }
@@ -514,14 +513,14 @@ pub struct CBoTa1 {
 	/// Bit string of 32 bits
 	pub bsi: Bsi,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CBoTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
-		let time = time_from_cp56time2a(&bytes[4..11]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[4..11]).context(ParseTimeTag)?;
 		Ok(Self { bsi, time })
 	}
 }
@@ -576,13 +575,13 @@ impl FromBytes for CRdNa1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CCsNa1 {
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CCsNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let time = time_from_cp56time2a(&bytes[0..7]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[0..7]).context(ParseTimeTag)?;
 		Ok(Self { time })
 	}
 }
@@ -620,15 +619,14 @@ impl FromBytes for CRpNa1 {
 /// Delay acquisition command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CCdNa1 {
-	//TODO: Fix it, delay is not a u16
 	/// Delay
-	pub delay: u16,
+	pub delay: Cp16Time2a,
 }
 
 impl FromBytes for CCdNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let delay = u16::from_be_bytes([bytes[1], bytes[0]]);
+		let delay = Cp16Time2a::from_bytes(&bytes[1..3]).context(ParseTimeTag)?;
 		Ok(Self { delay })
 	}
 }
@@ -639,14 +637,14 @@ pub struct CTsTa1 {
 	/// Test value
 	pub tsc: u16,
 	/// Time tag
-	pub time: PrimitiveDateTime,
+	pub time: Cp56Time2a,
 }
 
 impl FromBytes for CTsTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let tsc = u16::from_be_bytes([bytes[1], bytes[0]]);
-		let time = time_from_cp56time2a(&bytes[2..9]).context(ParseTimeTag)?;
+		let time = Cp56Time2a::from_bytes(&bytes[2..9]).context(ParseTimeTag)?;
 		Ok(Self { tsc, time })
 	}
 }
