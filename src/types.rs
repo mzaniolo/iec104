@@ -16,6 +16,7 @@ pub use measurements::{
 };
 pub use parameters::{PAcNa1, PMeNa1, PMeNb1, PMeNc1};
 use snafu::Snafu;
+use tracing::instrument;
 
 use crate::{error::SpanTraceWrapper, types::time::TimeConversionError, types_id::TypeId};
 
@@ -114,6 +115,7 @@ pub enum InformationObject {
 }
 
 impl InformationObject {
+	#[instrument]
 	fn build_objects<T: FromBytes>(
 		type_id: TypeId,
 		sequence: bool,

@@ -8,6 +8,7 @@ mod types_id;
 
 use error::Error;
 use snafu::ResultExt as _;
+use tracing::instrument;
 
 use crate::{asdu::Asdu, error::InvalidAsdu};
 
@@ -20,6 +21,7 @@ struct Apdu {
 }
 
 impl Apdu {
+	#[instrument]
 	pub fn parse(data: &[u8]) -> Result<Self, Box<Error>> {
 		// Check if the data is long enough to contain the APDU header
 		if data.len() < 6 {
@@ -77,6 +79,7 @@ struct IFrame {
 }
 
 impl IFrame {
+	#[instrument]
 	fn from_asdu(control_fields: &[u8], asdu: &[u8]) -> Result<Self, Box<Error>> {
 		if (control_fields[0] & 0b0000_0001) != 0 || (control_fields[2] & 0b0000_0001) != 0 {
 			return error::InvalidIFrameControlFields.fail()?;
@@ -103,6 +106,7 @@ struct SFrame {
 }
 
 impl SFrame {
+	#[instrument]
 	fn from_control_fields(control_fields: &[u8]) -> Result<Self, Box<Error>> {
 		if control_fields[0] != 0b0000_0001 || control_fields[1] != 0b0000_0000 {
 			return error::InvalidSFrameControlFields.fail()?;
@@ -143,6 +147,7 @@ struct UFrame {
 }
 
 impl UFrame {
+	#[instrument]
 	fn from_control_fields(control_fields: &[u8]) -> Result<Self, Box<Error>> {
 		if control_fields[1] != 0 || control_fields[2] != 0 || control_fields[3] != 0 {
 			return error::InvalidUFrameControlFields.fail()?;

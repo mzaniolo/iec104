@@ -1,5 +1,6 @@
 use snafu::ResultExt as _;
 use time::PrimitiveDateTime;
+use tracing::instrument;
 
 use crate::types::{
 	FromBytes, ParseError, ParseTimeTag,
@@ -16,6 +17,7 @@ pub struct MSpNa1 {
 }
 
 impl FromBytes for MSpNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let siq = Siq::from_byte(bytes[0]);
 		Ok(Self { siq })
@@ -32,6 +34,7 @@ pub struct MSpTa1 {
 }
 
 impl FromBytes for MSpTa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let siq = Siq::from_byte(bytes[0]);
 		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
@@ -47,6 +50,7 @@ pub struct MDpNa1 {
 }
 
 impl FromBytes for MDpNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let diq = Diq::from_byte(bytes[0]);
 		Ok(Self { diq })
@@ -63,6 +67,7 @@ pub struct MDpTa1 {
 }
 
 impl FromBytes for MDpTa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let diq = Diq::from_byte(bytes[0]);
 		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
@@ -78,6 +83,7 @@ pub struct MStNa1 {
 }
 
 impl FromBytes for MStNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let vti = Vti::from_byte(bytes);
 		Ok(Self { vti })
@@ -94,6 +100,7 @@ pub struct MStTa1 {
 }
 
 impl FromBytes for MStTa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let vti = Vti::from_byte(&bytes[0..2]);
 		let time = time_from_cp24time2a(&bytes[2..5]).context(ParseTimeTag)?;
@@ -111,6 +118,7 @@ pub struct MBoNa1 {
 }
 
 impl FromBytes for MBoNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -128,6 +136,7 @@ pub struct MMeNa1 {
 }
 
 impl FromBytes for MMeNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -147,6 +156,7 @@ pub struct MMeTa1 {
 }
 
 impl FromBytes for MMeTa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -165,6 +175,7 @@ pub struct MMeNb1 {
 }
 
 impl FromBytes for MMeNb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -184,6 +195,7 @@ pub struct MMeTb1 {
 }
 
 impl FromBytes for MMeTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -202,6 +214,7 @@ pub struct MMeNc1 {
 }
 
 impl FromBytes for MMeNc1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -221,6 +234,7 @@ pub struct MMeTc1 {
 }
 
 impl FromBytes for MMeTc1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -239,6 +253,7 @@ pub struct MItNa1 {
 }
 
 impl FromBytes for MItNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bcr = Bcr::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -256,6 +271,7 @@ pub struct MEpTa1 {
 }
 
 impl FromBytes for MEpTa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sep = Sep::from_byte(bytes[0]);
 		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
@@ -273,6 +289,7 @@ pub struct MEpTb1 {
 }
 
 impl FromBytes for MEpTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let start_ep = StartEp::from_byte(bytes[0]);
 		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
@@ -290,6 +307,7 @@ pub struct MEpTc1 {
 }
 
 impl FromBytes for MEpTc1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let oci = Oci::from_byte(bytes[0]);
 		let time = time_from_cp24time2a(&bytes[1..4]).context(ParseTimeTag)?;
@@ -307,6 +325,7 @@ pub struct MPsNa1 {
 }
 
 impl FromBytes for MPsNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -322,6 +341,7 @@ pub struct MMeNd1 {
 }
 
 impl FromBytes for MMeNd1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		Ok(Self { nva })
@@ -338,6 +358,7 @@ pub struct MSpTb1 {
 }
 
 impl FromBytes for MSpTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let siq = Siq::from_byte(bytes[0]);
 		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
@@ -355,6 +376,7 @@ pub struct MDpTb1 {
 }
 
 impl FromBytes for MDpTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let diq = Diq::from_byte(bytes[0]);
 		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
@@ -372,6 +394,7 @@ pub struct MStTb1 {
 }
 
 impl FromBytes for MStTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let vti = Vti::from_byte(&bytes[0..2]);
 		let time = time_from_cp56time2a(&bytes[2..9]).context(ParseTimeTag)?;
@@ -391,6 +414,7 @@ pub struct MBoTb1 {
 }
 
 impl FromBytes for MBoTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -411,6 +435,7 @@ pub struct MMeTd1 {
 }
 
 impl FromBytes for MMeTd1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -431,6 +456,7 @@ pub struct MMeTe1 {
 }
 
 impl FromBytes for MMeTe1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qds = Qds::from_byte(bytes[2]);
@@ -451,6 +477,7 @@ pub struct MMeTf1 {
 }
 
 impl FromBytes for MMeTf1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -471,6 +498,7 @@ pub struct MItTb1 {
 }
 
 impl FromBytes for MItTb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bcr = Bcr::from_byte(&bytes[0..4]);
 		let qds = Qds::from_byte(bytes[4]);
@@ -489,6 +517,7 @@ pub struct MEpTd1 {
 }
 
 impl FromBytes for MEpTd1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sep = Sep::from_byte(bytes[0]);
 		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
@@ -506,6 +535,7 @@ pub struct MEpTe1 {
 }
 
 impl FromBytes for MEpTe1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let start_ep = StartEp::from_byte(bytes[0]);
 		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
@@ -524,6 +554,7 @@ pub struct MEpTf1 {
 }
 
 impl FromBytes for MEpTf1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let oci = Oci::from_byte(bytes[0]);
 		let time = time_from_cp56time2a(&bytes[1..8]).context(ParseTimeTag)?;
@@ -541,6 +572,7 @@ pub struct MEiNa1 {
 }
 
 impl FromBytes for MEiNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let lpc = Lpc::from_bool(bytes[0] & 0b1000_0000 != 0);
 		let coi = Coi::from_byte(bytes[0] & 0b0111_1111);

@@ -1,4 +1,5 @@
 use snafu::{ResultExt as _, Snafu};
+use tracing::instrument;
 
 use crate::{
 	cot::{Cot, CotError},
@@ -19,6 +20,7 @@ pub struct Asdu {
 }
 
 impl Asdu {
+	#[instrument]
 	pub fn parse(bytes: &[u8]) -> Result<Self, AsduError> {
 		let type_id: TypeId = bytes[0].into();
 

@@ -1,3 +1,5 @@
+use tracing::instrument;
+
 use crate::types::{
 	FromBytes, ParseError,
 	information_elements::{Lpc, Nva, R32, Sva},
@@ -92,6 +94,7 @@ pub struct PMeNa1 {
 }
 
 impl FromBytes for PMeNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qpm = Qpm::from_byte(bytes[2]);
@@ -109,6 +112,7 @@ pub struct PMeNb1 {
 }
 
 impl FromBytes for PMeNb1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qpm = Qpm::from_byte(bytes[2]);
@@ -126,6 +130,7 @@ pub struct PMeNc1 {
 }
 
 impl FromBytes for PMeNc1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let r32 = R32::from_bytes(&bytes[0..4]);
 		let qpm = Qpm::from_byte(bytes[4]);
@@ -141,6 +146,7 @@ pub struct PAcNa1 {
 }
 
 impl FromBytes for PAcNa1 {
+	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let qpa = Qpa::from_byte(bytes[0]);
 		Ok(Self { qpa })

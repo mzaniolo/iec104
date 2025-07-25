@@ -1,8 +1,10 @@
 use snafu::{ResultExt, Snafu};
 use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time};
+use tracing::instrument;
 
 use crate::error::SpanTraceWrapper;
 
+#[instrument]
 pub fn time_from_cp24time2a(bytes: &[u8]) -> Result<PrimitiveDateTime, TimeConversionError> {
 	let ms = u16::from_be_bytes([bytes[1], bytes[0]]);
 	let min = bytes[2] & 0b0011_1111;
@@ -21,6 +23,7 @@ pub fn time_from_cp24time2a(bytes: &[u8]) -> Result<PrimitiveDateTime, TimeConve
 	))
 }
 
+#[instrument]
 pub fn time_from_cp56time2a(bytes: &[u8]) -> Result<PrimitiveDateTime, TimeConversionError> {
 	let ms = u16::from_be_bytes([bytes[1], bytes[0]]);
 	let min = bytes[2] & 0b0011_1111;

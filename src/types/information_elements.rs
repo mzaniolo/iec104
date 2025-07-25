@@ -204,7 +204,7 @@ pub enum EventState {
 }
 
 impl EventState {
-	const fn from_byte(byte: u8) -> Self {
+	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => EventState::Indeterminate,
 			1 => EventState::Off,
