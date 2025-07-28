@@ -2,14 +2,15 @@ use snafu::ResultExt as _;
 use tracing::instrument;
 
 use crate::types::{
-	FromBytes, ParseError, ParseTimeTag,
+	FromBytes, ParseError, ParseTimeTag, ToBytes,
 	information_elements::{Bsi, Dpi, Nva, R32, SelectExecute, Spi, Sva},
 	quality_descriptors::Qos,
 	time::{Cp16Time2a, Cp56Time2a},
 };
 
 /// Command qualifier
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Qu {
 	#[default]
 	/// Unspecified
@@ -34,6 +35,16 @@ impl Qu {
 			_ => Qu::Other(byte),
 		}
 	}
+
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Qu::Unspecified => 0,
+			Qu::ShortPulse => 1,
+			Qu::LongPulse => 2,
+			Qu::Persistent => 3,
+			Qu::Other(byte) => byte,
+		}
+	}
 }
 
 /// Single command
@@ -53,6 +64,14 @@ impl Sco {
 		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
 		let scs = Spi::from_byte(byte & 0b0000_0001);
 		Sco { se, qu, scs }
+	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.se as u8) << 7;
+		byte |= self.qu.to_byte() << 2;
+		byte |= self.scs as u8;
+		byte
 	}
 }
 
@@ -74,10 +93,18 @@ impl Dco {
 		let dcs = Dpi::from_byte(byte & 0b0000_0011);
 		Dco { se, qu, dcs }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.se as u8) << 7;
+		byte |= self.qu.to_byte() << 2;
+		byte |= self.dcs as u8;
+		byte
+	}
 }
 
 /// Status of regulating step
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
 #[repr(u8)]
 pub enum Rcs {
 	#[default]
@@ -100,6 +127,15 @@ impl Rcs {
 			_ => Rcs::Invalid,
 		}
 	}
+
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Rcs::None => 0,
+			Rcs::Decrement => 1,
+			Rcs::Increment => 2,
+			Rcs::Invalid => 3,
+		}
+	}
 }
 
 /// Regulating step command
@@ -120,10 +156,19 @@ impl Rco {
 		let rcs = Rcs::from_byte(byte & 0b0000_0011);
 		Rco { se, qu, rcs }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.se as u8) << 7;
+		byte |= self.qu.to_byte() << 2;
+		byte |= self.rcs as u8;
+		byte
+	}
 }
 
 /// Qualifier of interrogation
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Qoi {
 	#[default]
 	/// Unused
@@ -190,20 +235,45 @@ impl Qoi {
 			_ => Qoi::Other(byte),
 		}
 	}
+
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Qoi::Unused => 0,
+			Qoi::Global => 20,
+			Qoi::Group1 => 21,
+			Qoi::Group2 => 22,
+			Qoi::Group3 => 23,
+			Qoi::Group4 => 24,
+			Qoi::Group5 => 25,
+			Qoi::Group6 => 26,
+			Qoi::Group7 => 27,
+			Qoi::Group8 => 28,
+			Qoi::Group9 => 29,
+			Qoi::Group10 => 30,
+			Qoi::Group11 => 31,
+			Qoi::Group12 => 32,
+			Qoi::Group13 => 33,
+			Qoi::Group14 => 34,
+			Qoi::Group15 => 35,
+			Qoi::Group16 => 36,
+			Qoi::Other(byte) => byte,
+		}
+	}
 }
 
 /// Freeze/reset qualifier of counter interrogation commands
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Frz {
 	#[default]
 	/// Read
-	Read,
+	Read = 0,
 	/// Freeze
-	Freeze,
+	Freeze = 1,
 	/// Freeze and reset
-	FreezeAndReset,
+	FreezeAndReset = 2,
 	/// Reset
-	Reset,
+	Reset = 3,
 }
 
 impl Frz {
@@ -218,7 +288,8 @@ impl Frz {
 }
 
 /// Request qualifier of counter interrogation commands
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Rqt {
 	#[default]
 	/// No counter read
@@ -249,10 +320,23 @@ impl Rqt {
 			_ => Rqt::Other(byte),
 		}
 	}
+
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Rqt::None => 0,
+			Rqt::ReqCo1 => 1,
+			Rqt::ReqCo2 => 2,
+			Rqt::ReqCo3 => 3,
+			Rqt::ReqCo4 => 4,
+			Rqt::ReqCoGen => 5,
+			Rqt::Other(byte) => byte,
+		}
+	}
 }
 
 /// Qualifier of reset process
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Qrp {
 	#[default]
 	/// Unused
@@ -274,6 +358,15 @@ impl Qrp {
 			_ => Qrp::Other(byte),
 		}
 	}
+
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Qrp::Unused => 0,
+			Qrp::General => 1,
+			Qrp::TtEvents => 2,
+			Qrp::Other(byte) => byte,
+		}
+	}
 }
 
 /// Single command
@@ -288,6 +381,14 @@ impl FromBytes for CScNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let sco = Sco::from_byte(bytes[0]);
 		Ok(Self { sco })
+	}
+}
+
+impl ToBytes for CScNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.sco.to_byte());
+		Ok(())
 	}
 }
 
@@ -306,6 +407,14 @@ impl FromBytes for CdcNa1 {
 	}
 }
 
+impl ToBytes for CdcNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.dco.to_byte());
+		Ok(())
+	}
+}
+
 /// Regulating step command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CrcNa1 {
@@ -318,6 +427,14 @@ impl FromBytes for CrcNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let rco = Rco::from_byte(bytes[0]);
 		Ok(Self { rco })
+	}
+}
+
+impl ToBytes for CrcNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.rco.to_byte());
+		Ok(())
 	}
 }
 
@@ -339,6 +456,15 @@ impl FromBytes for CSeNa1 {
 	}
 }
 
+impl ToBytes for CSeNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.push(self.qos.to_byte());
+		Ok(())
+	}
+}
+
 /// Set-point command, scaled value
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeNb1 {
@@ -354,6 +480,15 @@ impl FromBytes for CSeNb1 {
 		let sva = Sva::from_bytes(&bytes[0..2]);
 		let qos = Qos::from_byte(bytes[2]);
 		Ok(Self { sva, qos })
+	}
+}
+
+impl ToBytes for CSeNb1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.push(self.qos.to_byte());
+		Ok(())
 	}
 }
 
@@ -375,6 +510,15 @@ impl FromBytes for CSeNc1 {
 	}
 }
 
+impl ToBytes for CSeNc1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.push(self.qos.to_byte());
+		Ok(())
+	}
+}
+
 /// Bitstring 32 bit command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CBoNa1 {
@@ -387,6 +531,14 @@ impl FromBytes for CBoNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let bsi = Bsi::from_byte(&bytes[0..4]);
 		Ok(Self { bsi })
+	}
+}
+
+impl ToBytes for CBoNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.bsi.to_bytes());
+		Ok(())
 	}
 }
 
@@ -408,6 +560,15 @@ impl FromBytes for CScTa1 {
 	}
 }
 
+impl ToBytes for CScTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.sco.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Double command with time tag
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CdcTa1 {
@@ -426,6 +587,15 @@ impl FromBytes for CdcTa1 {
 	}
 }
 
+impl ToBytes for CdcTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.dco.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Regulating step command with time tag
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CrcTa1 {
@@ -441,6 +611,15 @@ impl FromBytes for CrcTa1 {
 		let rco = Rco::from_byte(bytes[0]);
 		let time = Cp56Time2a::from_bytes(&bytes[1..8]).context(ParseTimeTag)?;
 		Ok(Self { rco, time })
+	}
+}
+
+impl ToBytes for CrcTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.rco.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
 	}
 }
 
@@ -465,6 +644,16 @@ impl FromBytes for CSeTa1 {
 	}
 }
 
+impl ToBytes for CSeTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.push(self.qos.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Measured value, scaled value command with time tag
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CSeTb1 {
@@ -483,6 +672,16 @@ impl FromBytes for CSeTb1 {
 		let qos = Qos::from_byte(bytes[2]);
 		let time = Cp56Time2a::from_bytes(&bytes[3..10]).context(ParseTimeTag)?;
 		Ok(Self { sva, qos, time })
+	}
+}
+
+impl ToBytes for CSeTb1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.push(self.qos.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
 	}
 }
 
@@ -507,6 +706,16 @@ impl FromBytes for CSeTc1 {
 	}
 }
 
+impl ToBytes for CSeTc1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.push(self.qos.to_byte());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Bitstring of 32 bit command with time tag
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CBoTa1 {
@@ -525,6 +734,15 @@ impl FromBytes for CBoTa1 {
 	}
 }
 
+impl ToBytes for CBoTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Interrogation command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CIcNa1 {
@@ -537,6 +755,14 @@ impl FromBytes for CIcNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let qoi = Qoi::from_byte(bytes[0]);
 		Ok(Self { qoi })
+	}
+}
+
+impl ToBytes for CIcNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.qoi.to_byte());
+		Ok(())
 	}
 }
 
@@ -558,6 +784,17 @@ impl FromBytes for CCiNa1 {
 	}
 }
 
+impl ToBytes for CCiNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		let mut byte: u8 = 0;
+		byte |= self.rqt.to_byte() & 0b0011_1111;
+		byte |= (self.frz as u8) << 6;
+		buffer.push(byte);
+		Ok(())
+	}
+}
+
 /// Read command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CRdNa1 {
@@ -568,6 +805,13 @@ impl FromBytes for CRdNa1 {
 	#[instrument]
 	fn from_bytes(_: &[u8]) -> Result<Self, Box<ParseError>> {
 		Ok(Self {})
+	}
+}
+
+impl ToBytes for CRdNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		Ok(())
 	}
 }
 
@@ -586,6 +830,14 @@ impl FromBytes for CCsNa1 {
 	}
 }
 
+impl ToBytes for CCsNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
+	}
+}
+
 /// Test command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CTsNa1 {
@@ -598,6 +850,14 @@ impl FromBytes for CTsNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let tsc = u16::from_be_bytes([bytes[1], bytes[0]]);
 		Ok(Self { tsc })
+	}
+}
+
+impl ToBytes for CTsNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.tsc.to_le_bytes());
+		Ok(())
 	}
 }
 
@@ -616,6 +876,14 @@ impl FromBytes for CRpNa1 {
 	}
 }
 
+impl ToBytes for CRpNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.qrp.to_byte());
+		Ok(())
+	}
+}
+
 /// Delay acquisition command
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CCdNa1 {
@@ -628,6 +896,14 @@ impl FromBytes for CCdNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let delay = Cp16Time2a::from_bytes(&bytes[1..3]).context(ParseTimeTag)?;
 		Ok(Self { delay })
+	}
+}
+
+impl ToBytes for CCdNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.delay.to_bytes());
+		Ok(())
 	}
 }
 
@@ -646,5 +922,14 @@ impl FromBytes for CTsTa1 {
 		let tsc = u16::from_be_bytes([bytes[1], bytes[0]]);
 		let time = Cp56Time2a::from_bytes(&bytes[2..9]).context(ParseTimeTag)?;
 		Ok(Self { tsc, time })
+	}
+}
+
+impl ToBytes for CTsTa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.tsc.to_le_bytes());
+		buffer.extend_from_slice(&self.time.to_bytes());
+		Ok(())
 	}
 }

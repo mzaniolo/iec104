@@ -28,6 +28,16 @@ impl Cp24Time2a {
 		}
 		Ok(Self { ms, min, iv })
 	}
+
+	#[instrument]
+	pub fn to_bytes(self) -> [u8; 3] {
+		let mut bytes: [u8; 3] = [0, 0, 0];
+		let ms_bytes = self.ms.to_le_bytes();
+		bytes[0] = ms_bytes[0];
+		bytes[1] = ms_bytes[1];
+		bytes[2] = (self.min & 0b0011_1111) | (u8::from(self.iv) << 7);
+		bytes
+	}
 }
 
 /// CP16Time2a time type
@@ -45,6 +55,11 @@ impl Cp16Time2a {
 			return MillisecondsError.fail()?;
 		}
 		Ok(Self { ms })
+	}
+
+	#[instrument]
+	pub fn to_bytes(self) -> [u8; 2] {
+		self.ms.to_le_bytes()
 	}
 }
 
@@ -103,6 +118,20 @@ impl Cp56Time2a {
 			return YearsError.fail()?;
 		}
 		Ok(Self { ms, iv, min, summer_time, hour, weekday, day, month, year })
+	}
+
+	#[instrument]
+	pub fn to_bytes(&self) -> [u8; 7] {
+		let mut bytes: [u8; 7] = [0, 0, 0, 0, 0, 0, 0];
+		let ms_bytes = self.ms.to_le_bytes();
+		bytes[0] = ms_bytes[0];
+		bytes[1] = ms_bytes[1];
+		bytes[2] = (u8::from(self.iv) << 7) | (self.min & 0b0011_1111);
+		bytes[3] = (u8::from(self.summer_time) << 7) | (self.hour & 0b0001_1111);
+		bytes[4] = (self.weekday << 5) | (self.day & 0b0001_1111);
+		bytes[5] = self.month & 0b0000_1111;
+		bytes[6] = self.year & 0b0111_1111;
+		bytes
 	}
 }
 

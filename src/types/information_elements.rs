@@ -16,17 +16,6 @@ pub struct Siq {
 	pub spi: Spi,
 }
 
-/// Single point information
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
-pub enum Spi {
-	#[default]
-	/// Off
-	Off = 0,
-	/// On
-	On = 1,
-}
-
 impl Siq {
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
@@ -36,6 +25,29 @@ impl Siq {
 		let spi = Spi::from_byte(byte & 0b0000_0001);
 		Siq { iv, nt, sb, bl, spi }
 	}
+}
+
+impl Siq {
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.nt as u8) << 6;
+		byte |= (self.sb as u8) << 5;
+		byte |= (self.bl as u8) << 4;
+		byte |= self.spi as u8;
+		byte
+	}
+}
+
+/// Single point information
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
+pub enum Spi {
+	#[default]
+	/// Off
+	Off = 0,
+	/// On
+	On = 1,
 }
 
 impl Spi {
@@ -67,6 +79,16 @@ impl Diq {
 		let bl = byte & 0b0001_0000 != 0;
 		let dpi = Dpi::from_byte(byte & 0b0000_0011);
 		Diq { iv, nt, sb, bl, dpi }
+	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.nt as u8) << 6;
+		byte |= (self.sb as u8) << 5;
+		byte |= (self.bl as u8) << 4;
+		byte |= self.dpi as u8;
+		byte
 	}
 }
 
@@ -114,6 +136,14 @@ impl Vti {
 		let qds = Qds::from_byte(bytes[1]);
 		Vti { value, transient, qds }
 	}
+
+	pub const fn to_bytes(&self) -> [u8; 2] {
+		let mut bytes: [u8; 2] = [0, 0];
+		bytes[0] |= self.value & 0b0111_1111;
+		bytes[0] |= (self.transient as u8) << 7;
+		bytes[1] |= self.qds.to_byte();
+		bytes
+	}
 }
 
 /// Bit string of 32 bits
@@ -127,6 +157,10 @@ impl Bsi {
 	pub const fn from_byte(bytes: &[u8]) -> Self {
 		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		Bsi { value }
+	}
+
+	pub const fn to_bytes(&self) -> [u8; 4] {
+		self.value.to_le_bytes()
 	}
 }
 
@@ -142,6 +176,10 @@ impl Nva {
 		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
 		Nva { value }
 	}
+
+	pub const fn to_bytes(&self) -> [u8; 2] {
+		self.value.to_le_bytes()
+	}
 }
 
 /// Scaled value
@@ -156,6 +194,10 @@ impl Sva {
 		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
 		Sva { value }
 	}
+
+	pub const fn to_bytes(&self) -> [u8; 2] {
+		self.value.to_le_bytes()
+	}
 }
 
 /// Short floating point
@@ -169,6 +211,10 @@ impl R32 {
 	pub const fn from_bytes(bytes: &[u8]) -> Self {
 		let value = f32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		R32 { value }
+	}
+
+	pub const fn to_bytes(&self) -> [u8; 4] {
+		self.value.to_le_bytes()
 	}
 }
 
@@ -185,6 +231,10 @@ impl Bcr {
 	pub const fn from_byte(bytes: &[u8]) -> Self {
 		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		Bcr { value }
+	}
+
+	pub const fn to_bytes(&self) -> [u8; 4] {
+		self.value.to_le_bytes()
 	}
 }
 
@@ -242,6 +292,17 @@ impl Sep {
 		let es = EventState::from_byte(byte & 0b0000_0011);
 		Sep { iv, nt, sb, bl, ei, es }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.nt as u8) << 6;
+		byte |= (self.sb as u8) << 5;
+		byte |= (self.bl as u8) << 4;
+		byte |= (self.ei as u8) << 3;
+		byte |= self.es as u8;
+		byte
+	}
 }
 
 /// Start events of protection equipment
@@ -272,6 +333,17 @@ impl StartEp {
 		let gs = byte & 0b0000_0001 != 0;
 		StartEp { srd, sie, sl3, sl2, sl1, gs }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.srd as u8) << 5;
+		byte |= (self.sie as u8) << 4;
+		byte |= (self.sl3 as u8) << 3;
+		byte |= (self.sl2 as u8) << 2;
+		byte |= (self.sl1 as u8) << 1;
+		byte |= self.gs as u8;
+		byte
+	}
 }
 
 /// Output circuit information
@@ -296,10 +368,19 @@ impl Oci {
 		let gc = byte & 0b0000_0001 != 0;
 		Oci { cl3, cl2, cl1, gc }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.cl3 as u8) << 3;
+		byte |= (self.cl2 as u8) << 2;
+		byte |= (self.cl1 as u8) << 1;
+		byte |= self.gc as u8;
+		byte
+	}
 }
 
 /// Select/execute command
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
 #[repr(u8)]
 pub enum SelectExecute {
 	/// Execute
@@ -319,7 +400,7 @@ impl SelectExecute {
 }
 
 /// Local parameter change
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
 #[repr(u8)]
 pub enum Lpc {
 	#[default]
@@ -340,14 +421,15 @@ impl Lpc {
 
 /// Cause of initialization
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[repr(u8)]
 pub enum Coi {
 	#[default]
 	/// Local power on
-	LocalPowerOn,
+	LocalPowerOn = 0,
 	/// Local manual reset
-	LocalManualReset,
+	LocalManualReset = 1,
 	/// Remote reset
-	RemoteReset,
+	RemoteReset = 2,
 	/// Other (custom)
 	Other(u8),
 }
@@ -359,6 +441,15 @@ impl Coi {
 			1 => Coi::LocalManualReset,
 			2 => Coi::RemoteReset,
 			_ => Coi::Other(byte),
+		}
+	}
+
+	pub const fn to_byte(&self) -> u8 {
+		match self {
+			Coi::LocalPowerOn => 0,
+			Coi::LocalManualReset => 1,
+			Coi::RemoteReset => 2,
+			Coi::Other(byte) => *byte,
 		}
 	}
 }

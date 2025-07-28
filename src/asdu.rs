@@ -9,14 +9,14 @@ use crate::{
 };
 
 pub struct Asdu {
-	type_id: TypeId,
-	cot: Cot,
-	originator_address: u8,
-	address_field: u16,
-	sequence: bool,
-	test: bool,
-	positive: bool,
-	information_objects: InformationObject,
+	pub type_id: TypeId,
+	pub cot: Cot,
+	pub originator_address: u8,
+	pub address_field: u16,
+	pub sequence: bool,
+	pub test: bool,
+	pub positive: bool,
+	pub information_objects: InformationObject,
 }
 
 impl Asdu {
@@ -75,6 +75,36 @@ impl Asdu {
 			information_objects,
 		})
 	}
+	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), AsduError> {
+		buffer.push(self.type_id as u8);
+		let num_objs = self.information_objects.len();
+		if num_objs > 127 {
+			return TooManyObjects { num_objs }.fail();
+		}
+		let mut byte: u8 = num_objs as u8;
+		if self.sequence {
+			byte |= 0b1000_0000;
+		}
+		buffer.push(byte);
+
+		let mut byte: u8 = self.cot as u8;
+		if self.test {
+			byte |= 0b1000_0000;
+		}
+		if self.positive {
+			byte |= 0b0100_0000;
+		}
+		buffer.push(byte);
+
+		buffer.push(self.originator_address);
+
+		let address_field = self.address_field.to_le_bytes();
+		buffer.push(address_field[0]);
+		buffer.push(address_field[1]);
+
+		self.information_objects.to_bytes(buffer).context(InvalidInformationObject)?;
+		Ok(())
+	}
 }
 
 #[derive(Debug, Snafu)]
@@ -101,6 +131,12 @@ pub enum AsduError {
 	#[snafu(display("Invalid information object"))]
 	InvalidInformationObject {
 		source: Box<ParseError>,
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+	#[snafu(display("Too many objects. Max number of objects is 127, got {num_objs} objects."))]
+	TooManyObjects {
+		num_objs: usize,
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},

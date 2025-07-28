@@ -25,6 +25,16 @@ impl Qds {
 		let ov = byte & 0b0000_0001 != 0;
 		Qds { iv, nt, sb, bl, ov }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.nt as u8) << 6;
+		byte |= (self.sb as u8) << 5;
+		byte |= (self.bl as u8) << 4;
+		byte |= self.ov as u8;
+		byte
+	}
 }
 
 /// Sequence quality descriptor
@@ -47,6 +57,15 @@ impl SeqQd {
 		let cy = byte & 0b0010_0000 != 0;
 		let seq = byte & 0b0001_1111;
 		SeqQd { iv, ca, cy, seq }
+	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.ca as u8) << 6;
+		byte |= (self.cy as u8) << 5;
+		byte |= self.seq & 0b0001_1111;
+		byte
 	}
 }
 
@@ -75,6 +94,16 @@ impl Qdp {
 		let ei = byte & 0b0000_1000 != 0;
 		Qdp { iv, nt, sb, bl, ei }
 	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.iv as u8) << 7;
+		byte |= (self.nt as u8) << 6;
+		byte |= (self.sb as u8) << 5;
+		byte |= (self.bl as u8) << 4;
+		byte |= (self.ei as u8) << 3;
+		byte
+	}
 }
 
 /// Qualifier of set point command
@@ -91,5 +120,12 @@ impl Qos {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
 		let ql = byte & 0b0000_0001 != 0;
 		Qos { se, ql }
+	}
+
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= (self.se as u8) << 7;
+		byte |= (self.ql as u8) & 0b0000_0001;
+		byte
 	}
 }

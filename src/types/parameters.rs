@@ -1,7 +1,7 @@
 use tracing::instrument;
 
 use crate::types::{
-	FromBytes, ParseError,
+	FromBytes, ParseError, ToBytes,
 	information_elements::{Lpc, Nva, R32, Sva},
 };
 
@@ -34,6 +34,16 @@ impl Kpa {
 			_ => Kpa::Other(byte),
 		}
 	}
+	pub const fn to_byte(&self) -> u8 {
+		match self {
+			Kpa::Unused => 0,
+			Kpa::Thresh => 1,
+			Kpa::Filter => 2,
+			Kpa::LoLimit => 3,
+			Kpa::HiLimit => 4,
+			Kpa::Other(byte) => *byte,
+		}
+	}
 }
 
 /// Qualifier of parameter of measured value
@@ -54,10 +64,18 @@ impl Qpm {
 		let lpc = Lpc::from_bool(byte & 0b1000_0000 != 0);
 		Self { kpa, pop, lpc }
 	}
+	pub const fn to_byte(&self) -> u8 {
+		let mut byte: u8 = 0;
+		byte |= self.kpa.to_byte() << 5;
+		byte |= (self.pop as u8) << 6;
+		byte |= (self.lpc as u8) << 7;
+		byte
+	}
 }
 
 /// Qualifier of parameter activation
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Copy)]
+#[repr(u8)]
 pub enum Qpa {
 	#[default]
 	/// Unused
@@ -82,6 +100,15 @@ impl Qpa {
 			_ => Qpa::Other(byte),
 		}
 	}
+	pub const fn to_byte(self) -> u8 {
+		match self {
+			Qpa::Unused => 0,
+			Qpa::General => 1,
+			Qpa::Object => 2,
+			Qpa::Transmission => 3,
+			Qpa::Other(byte) => byte,
+		}
+	}
 }
 
 /// Parameter of measured value, normalized value
@@ -99,6 +126,15 @@ impl FromBytes for PMeNa1 {
 		let nva = Nva::from_bytes(&bytes[0..2]);
 		let qpm = Qpm::from_byte(bytes[2]);
 		Ok(Self { nva, qpm })
+	}
+}
+
+impl ToBytes for PMeNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.push(self.qpm.to_byte());
+		Ok(())
 	}
 }
 
@@ -120,6 +156,15 @@ impl FromBytes for PMeNb1 {
 	}
 }
 
+impl ToBytes for PMeNb1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.push(self.qpm.to_byte());
+		Ok(())
+	}
+}
+
 /// Parameter of short floating point value, measured value
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct PMeNc1 {
@@ -138,6 +183,15 @@ impl FromBytes for PMeNc1 {
 	}
 }
 
+impl ToBytes for PMeNc1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.push(self.qpm.to_byte());
+		Ok(())
+	}
+}
+
 /// Parameter activation
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct PAcNa1 {
@@ -150,5 +204,13 @@ impl FromBytes for PAcNa1 {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
 		let qpa = Qpa::from_byte(bytes[0]);
 		Ok(Self { qpa })
+	}
+}
+
+impl ToBytes for PAcNa1 {
+	#[instrument]
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+		buffer.push(self.qpa.to_byte());
+		Ok(())
 	}
 }
