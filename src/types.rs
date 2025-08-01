@@ -15,10 +15,12 @@ pub use measurements::{
 	MPsNa1, MSpNa1, MSpTa1, MSpTb1, MStNa1, MStTa1, MStTb1,
 };
 pub use parameters::{PAcNa1, PMeNa1, PMeNb1, PMeNc1};
-use snafu::Snafu;
+use snafu::{OptionExt, Snafu};
 use tracing::instrument;
 
 use crate::{error::SpanTraceWrapper, types::time::ParseTimeError, types_id::TypeId};
+
+const ADDRESS_SIZE: usize = 3;
 
 pub trait FromBytes: Sized {
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>>;
@@ -43,17 +45,24 @@ pub enum ParseError {
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},
+	#[snafu(display("Not enough bytes"))]
+	NotEnoughBytes {
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
 }
 
 pub trait ToBytes {
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>>;
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct GenericObject<T: FromBytes + ToBytes> {
 	pub address: u32,
 	pub object: T,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum InformationObject {
 	MSpNa1(Vec<GenericObject<MSpNa1>>),
 	MSpTa1(Vec<GenericObject<MSpTa1>>),
@@ -123,39 +132,56 @@ impl InformationObject {
 		bytes: &[u8],
 	) -> Result<Vec<GenericObject<T>>, Box<ParseError>> {
 		let object_size = type_id.size();
+		tracing::trace!(
+			"Building information objects. Object size: {object_size}. Bytes: {:?}",
+			bytes
+		);
 
-		Ok(if sequence {
+		if sequence {
 			let mut objs = Vec::<GenericObject<T>>::with_capacity(num_objs as usize);
-			let first_addr = u32::from_be_bytes([0, bytes[2], bytes[1], bytes[0]]);
-			let first_obj = T::from_bytes(&bytes[3..object_size])?;
+			let (first_chunk, other_chunks) =
+				bytes.split_at_checked(object_size + ADDRESS_SIZE).context(NotEnoughBytes)?;
+
+			// This won't panic because we checked that the first chunk is at least
+			// ADDRESS_SIZE bytes long
+			let first_addr =
+				u32::from_le_bytes([first_chunk[0], first_chunk[1], first_chunk[2], 0]);
+			let first_obj = T::from_bytes(&first_chunk[ADDRESS_SIZE..])?;
 			objs.push(GenericObject { address: first_addr, object: first_obj });
-			let other_objs = bytes[object_size..]
-				.chunks(object_size)
+			let other_chunks = other_chunks.chunks_exact(object_size);
+			// TODO: Do we really need to make sure of this here?
+			if !other_chunks.remainder().is_empty() {
+				return NotEnoughBytes.fail()?;
+			}
+
+			let other_objs = other_chunks
 				.enumerate()
 				.map(|(i, chunk)| {
+					tracing::trace!("Building object: {:?}", chunk);
 					// If it's a sequence we only get the address of the first object. So the first
 					// object has object_size + 3 bytes for the address. The subsequent chunks only
 					// have the object_size.
 					// Since the i starts at 0, we need to add 1 to the address.
 					let address = first_addr + (i as u32) + 1;
-					let object = T::from_bytes(&chunk[3..])?;
+					let object = T::from_bytes(&chunk[ADDRESS_SIZE..])?;
 					Ok(GenericObject { address, object })
 				})
 				.collect::<Result<Vec<_>, Box<ParseError>>>()?;
 			objs.extend(other_objs);
-			objs
+			Ok::<_, Box<ParseError>>(objs)
 		} else {
 			// If it's not a sequence we get the address of each object in the first 3
 			// bytes.
-			bytes[0..]
+			Ok(bytes[0..]
 				.chunks(object_size + 3)
 				.map(|chunk| {
+					tracing::trace!("Building object: {:?}", chunk);
 					let address = u32::from_be_bytes([0, chunk[2], chunk[1], chunk[0]]);
 					let object = T::from_bytes(&chunk[3..])?;
 					Ok(GenericObject { address, object })
 				})
-				.collect::<Result<Vec<_>, Box<ParseError>>>()?
-		})
+				.collect::<Result<Vec<_>, Box<ParseError>>>()?)
+		}
 	}
 
 	#[instrument(skip_all)]
@@ -366,6 +392,7 @@ impl InformationObject {
 		})
 	}
 
+	#[must_use]
 	pub const fn len(&self) -> usize {
 		match self {
 			InformationObject::MSpNa1(objs) => objs.len(),
@@ -425,6 +452,69 @@ impl InformationObject {
 			InformationObject::PMeNb1(objs) => objs.len(),
 			InformationObject::PMeNc1(objs) => objs.len(),
 			InformationObject::PAcNa1(objs) => objs.len(),
+		}
+	}
+
+	#[must_use]
+	pub const fn is_empty(&self) -> bool {
+		match self {
+			InformationObject::MSpNa1(objs) => objs.is_empty(),
+			InformationObject::MSpTa1(objs) => objs.is_empty(),
+			InformationObject::MDpNa1(objs) => objs.is_empty(),
+			InformationObject::MDpTa1(objs) => objs.is_empty(),
+			InformationObject::MStNa1(objs) => objs.is_empty(),
+			InformationObject::MStTa1(objs) => objs.is_empty(),
+			InformationObject::MBoNa1(objs) => objs.is_empty(),
+			InformationObject::MMeNa1(objs) => objs.is_empty(),
+			InformationObject::MMeTa1(objs) => objs.is_empty(),
+			InformationObject::MMeNb1(objs) => objs.is_empty(),
+			InformationObject::MMeTb1(objs) => objs.is_empty(),
+			InformationObject::MMeNc1(objs) => objs.is_empty(),
+			InformationObject::MMeTc1(objs) => objs.is_empty(),
+			InformationObject::MItNa1(objs) => objs.is_empty(),
+			InformationObject::MEpTa1(objs) => objs.is_empty(),
+			InformationObject::MEpTb1(objs) => objs.is_empty(),
+			InformationObject::MEpTc1(objs) => objs.is_empty(),
+			InformationObject::MPsNa1(objs) => objs.is_empty(),
+			InformationObject::MMeNd1(objs) => objs.is_empty(),
+			InformationObject::MSpTb1(objs) => objs.is_empty(),
+			InformationObject::MDpTb1(objs) => objs.is_empty(),
+			InformationObject::MStTb1(objs) => objs.is_empty(),
+			InformationObject::MBoTb1(objs) => objs.is_empty(),
+			InformationObject::MMeTd1(objs) => objs.is_empty(),
+			InformationObject::MMeTe1(objs) => objs.is_empty(),
+			InformationObject::MMeTf1(objs) => objs.is_empty(),
+			InformationObject::MItTb1(objs) => objs.is_empty(),
+			InformationObject::MEpTd1(objs) => objs.is_empty(),
+			InformationObject::MEpTe1(objs) => objs.is_empty(),
+			InformationObject::MEpTf1(objs) => objs.is_empty(),
+			InformationObject::MEiNa1(objs) => objs.is_empty(),
+			InformationObject::CScNa1(objs) => objs.is_empty(),
+			InformationObject::CdcNa1(objs) => objs.is_empty(),
+			InformationObject::CrcNa1(objs) => objs.is_empty(),
+			InformationObject::CSeNa1(objs) => objs.is_empty(),
+			InformationObject::CSeNb1(objs) => objs.is_empty(),
+			InformationObject::CSeNc1(objs) => objs.is_empty(),
+			InformationObject::CBoNa1(objs) => objs.is_empty(),
+			InformationObject::CScTa1(objs) => objs.is_empty(),
+			InformationObject::CdcTa1(objs) => objs.is_empty(),
+			InformationObject::CrcTa1(objs) => objs.is_empty(),
+			InformationObject::CSeTa1(objs) => objs.is_empty(),
+			InformationObject::CSeTb1(objs) => objs.is_empty(),
+			InformationObject::CSeTc1(objs) => objs.is_empty(),
+			InformationObject::CBoTa1(objs) => objs.is_empty(),
+			InformationObject::CIcNa1(objs) => objs.is_empty(),
+			InformationObject::CCiNa1(objs) => objs.is_empty(),
+			InformationObject::CRdNa1(objs) => objs.is_empty(),
+			InformationObject::CCsNa1(objs) => objs.is_empty(),
+			InformationObject::CTsNa1(objs) => objs.is_empty(),
+			InformationObject::CRpNa1(objs) => objs.is_empty(),
+			InformationObject::CCdNa1(objs) => objs.is_empty(),
+			InformationObject::CTsTa1(objs) => objs.is_empty(),
+			InformationObject::PMeNa1(objs) => objs.is_empty(),
+			InformationObject::PMeNb1(objs) => objs.is_empty(),
+			InformationObject::PMeNc1(objs) => objs.is_empty(),
+			InformationObject::PAcNa1(objs) => objs.is_empty(),
 		}
 	}
 

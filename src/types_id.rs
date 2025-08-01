@@ -398,6 +398,7 @@ impl From<u8> for TypeId {
 }
 
 impl TypeId {
+	#[must_use]
 	pub const fn size(self) -> usize {
 		match self {
 			TypeId::M_SP_NA_1 => 1,

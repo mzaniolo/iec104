@@ -17,6 +17,7 @@ pub struct Siq {
 }
 
 impl Siq {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let nt = byte & 0b0100_0000 != 0;
@@ -28,6 +29,7 @@ impl Siq {
 }
 
 impl Siq {
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -51,6 +53,7 @@ pub enum Spi {
 }
 
 impl Spi {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		if byte == 0 { Spi::Off } else { Spi::On }
 	}
@@ -72,6 +75,7 @@ pub struct Diq {
 }
 
 impl Diq {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let nt = byte & 0b0100_0000 != 0;
@@ -81,6 +85,7 @@ impl Diq {
 		Diq { iv, nt, sb, bl, dpi }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -108,6 +113,7 @@ pub enum Dpi {
 }
 
 impl Dpi {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Dpi::Indeterminate,
@@ -130,6 +136,7 @@ pub struct Vti {
 }
 
 impl Vti {
+	#[must_use]
 	pub const fn from_byte(bytes: &[u8]) -> Self {
 		let value = bytes[0] & 0b0111_1111;
 		let transient = bytes[0] & 0b1000_0000 != 0;
@@ -137,6 +144,7 @@ impl Vti {
 		Vti { value, transient, qds }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 2] {
 		let mut bytes: [u8; 2] = [0, 0];
 		bytes[0] |= self.value & 0b0111_1111;
@@ -154,11 +162,13 @@ pub struct Bsi {
 }
 
 impl Bsi {
+	#[must_use]
 	pub const fn from_byte(bytes: &[u8]) -> Self {
 		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		Bsi { value }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 4] {
 		self.value.to_le_bytes()
 	}
@@ -172,11 +182,13 @@ pub struct Nva {
 }
 
 impl Nva {
+	#[must_use]
 	pub const fn from_bytes(bytes: &[u8]) -> Self {
 		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
 		Nva { value }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 2] {
 		self.value.to_le_bytes()
 	}
@@ -190,11 +202,13 @@ pub struct Sva {
 }
 
 impl Sva {
+	#[must_use]
 	pub const fn from_bytes(bytes: &[u8]) -> Self {
 		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
 		Sva { value }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 2] {
 		self.value.to_le_bytes()
 	}
@@ -208,11 +222,13 @@ pub struct R32 {
 }
 
 impl R32 {
+	#[must_use]
 	pub const fn from_bytes(bytes: &[u8]) -> Self {
 		let value = f32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		R32 { value }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 4] {
 		self.value.to_le_bytes()
 	}
@@ -228,11 +244,13 @@ pub struct Bcr {
 }
 
 impl Bcr {
+	#[must_use]
 	pub const fn from_byte(bytes: &[u8]) -> Self {
 		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
 		Bcr { value }
 	}
 
+	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 4] {
 		self.value.to_le_bytes()
 	}
@@ -254,6 +272,7 @@ pub enum EventState {
 }
 
 impl EventState {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => EventState::Indeterminate,
@@ -283,6 +302,7 @@ pub struct Sep {
 }
 
 impl Sep {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let nt = byte & 0b0100_0000 != 0;
@@ -293,6 +313,7 @@ impl Sep {
 		Sep { iv, nt, sb, bl, ei, es }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -324,6 +345,7 @@ pub struct StartEp {
 }
 
 impl StartEp {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let srd = byte & 0b0010_0000 != 0;
 		let sie = byte & 0b0001_0000 != 0;
@@ -334,6 +356,7 @@ impl StartEp {
 		StartEp { srd, sie, sl3, sl2, sl1, gs }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.srd as u8) << 5;
@@ -361,6 +384,7 @@ pub struct Oci {
 }
 
 impl Oci {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let cl3 = byte & 0b0000_1000 != 0;
 		let cl2 = byte & 0b0000_0100 != 0;
@@ -369,6 +393,7 @@ impl Oci {
 		Oci { cl3, cl2, cl1, gc }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.cl3 as u8) << 3;
@@ -391,6 +416,7 @@ pub enum SelectExecute {
 }
 
 impl SelectExecute {
+	#[must_use]
 	pub const fn from_bool(select: bool) -> Self {
 		match select {
 			true => SelectExecute::Select,
@@ -411,6 +437,7 @@ pub enum Lpc {
 }
 
 impl Lpc {
+	#[must_use]
 	pub const fn from_bool(state: bool) -> Self {
 		match state {
 			true => Lpc::Changed,
@@ -435,6 +462,7 @@ pub enum Coi {
 }
 
 impl Coi {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Coi::LocalPowerOn,
@@ -444,6 +472,7 @@ impl Coi {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		match self {
 			Coi::LocalPowerOn => 0,

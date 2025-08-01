@@ -26,6 +26,7 @@ pub enum Qu {
 }
 
 impl Qu {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Qu::Unspecified,
@@ -36,6 +37,7 @@ impl Qu {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Qu::Unspecified => 0,
@@ -59,6 +61,7 @@ pub struct Sco {
 }
 
 impl Sco {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
 		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
@@ -66,6 +69,7 @@ impl Sco {
 		Sco { se, qu, scs }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.se as u8) << 7;
@@ -87,6 +91,7 @@ pub struct Dco {
 }
 
 impl Dco {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
 		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
@@ -94,6 +99,7 @@ impl Dco {
 		Dco { se, qu, dcs }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.se as u8) << 7;
@@ -119,6 +125,7 @@ pub enum Rcs {
 }
 
 impl Rcs {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Rcs::None,
@@ -128,6 +135,7 @@ impl Rcs {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Rcs::None => 0,
@@ -150,6 +158,7 @@ pub struct Rco {
 }
 
 impl Rco {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
 		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
@@ -157,6 +166,7 @@ impl Rco {
 		Rco { se, qu, rcs }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.se as u8) << 7;
@@ -212,6 +222,7 @@ pub enum Qoi {
 }
 
 impl Qoi {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Qoi::Unused,
@@ -236,6 +247,7 @@ impl Qoi {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Qoi::Unused => 0,
@@ -277,6 +289,7 @@ pub enum Frz {
 }
 
 impl Frz {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Frz::Read,
@@ -309,6 +322,7 @@ pub enum Rqt {
 }
 
 impl Rqt {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Rqt::None,
@@ -321,6 +335,7 @@ impl Rqt {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Rqt::None => 0,
@@ -350,6 +365,7 @@ pub enum Qrp {
 }
 
 impl Qrp {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Qrp::Unused,
@@ -359,6 +375,7 @@ impl Qrp {
 		}
 	}
 
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Qrp::Unused => 0,

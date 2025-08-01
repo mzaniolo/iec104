@@ -24,6 +24,7 @@ pub enum Kpa {
 }
 
 impl Kpa {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Kpa::Unused,
@@ -34,6 +35,7 @@ impl Kpa {
 			_ => Kpa::Other(byte),
 		}
 	}
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		match self {
 			Kpa::Unused => 0,
@@ -58,12 +60,14 @@ pub struct Qpm {
 }
 
 impl Qpm {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let kpa = Kpa::from_byte(byte >> 5);
 		let pop = byte & 0b0100_0000 != 0;
 		let lpc = Lpc::from_bool(byte & 0b1000_0000 != 0);
 		Self { kpa, pop, lpc }
 	}
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= self.kpa.to_byte() << 5;
@@ -91,6 +95,7 @@ pub enum Qpa {
 }
 
 impl Qpa {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		match byte {
 			0 => Qpa::Unused,
@@ -100,6 +105,7 @@ impl Qpa {
 			_ => Qpa::Other(byte),
 		}
 	}
+	#[must_use]
 	pub const fn to_byte(self) -> u8 {
 		match self {
 			Qpa::Unused => 0,

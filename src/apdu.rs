@@ -6,10 +6,11 @@ use crate::{
 	error::{self, Error, InvalidAsdu},
 };
 
-const TELEGRAN_HEADER: u8 = 0x68;
-const APUD_MAX_LENGTH: u8 = 253;
+pub(crate) const TELEGRAN_HEADER: u8 = 0x68;
+pub(crate) const APUD_MAX_LENGTH: u8 = 253;
 
-struct Apdu {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Apdu {
 	length: u8,
 	frame: Frame,
 }
@@ -53,7 +54,8 @@ impl Apdu {
 	}
 }
 
-enum Frame {
+#[derive(Debug, Clone, PartialEq)]
+pub enum Frame {
 	I(IFrame),
 	S(SFrame),
 	U(UFrame),
@@ -72,22 +74,31 @@ impl Frame {
 		Ok(Frame::I(IFrame::from_asdu(control_fields, asdu)?))
 	}
 
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
+	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
 		match self {
 			Frame::I(i) => i.to_bytes(buffer),
 			Frame::S(s) => s.to_bytes(buffer),
 			Frame::U(u) => u.to_bytes(buffer),
 		}
 	}
+	pub fn to_apdu_bytes(&self) -> Result<Vec<u8>, Box<Error>> {
+		let mut buffer = Vec::new();
+		buffer.push(TELEGRAN_HEADER);
+		buffer.push(0); // length placeholder
+		self.to_bytes(&mut buffer)?;
+		buffer[1] = (buffer.len() - 2) as u8; // update length
+		Ok(buffer)
+	}
 }
 
 /// I-Frame
 ///
 /// Used for frames containing ASDUs
-struct IFrame {
-	send_sequence_number: u16,
-	receive_sequence_number: u16,
-	asdu: Asdu,
+#[derive(Debug, Clone, PartialEq)]
+pub struct IFrame {
+	pub send_sequence_number: u16,
+	pub receive_sequence_number: u16,
+	pub asdu: Asdu,
 }
 
 impl IFrame {
@@ -124,8 +135,9 @@ impl IFrame {
 /// The station sends an S-frame to acknowledge receipt of I-frames whose SSN is
 /// less than the RSN specified in the S-frame. This frame is sent by the
 /// station if it does not have any data that it would like to send via I-frame
-struct SFrame {
-	receive_sequence_number: u16,
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SFrame {
+	pub receive_sequence_number: u16,
 }
 
 impl SFrame {
@@ -164,18 +176,17 @@ impl SFrame {
 ///
 /// - TestFR activation/confirmation - sending the test frame and responding to
 ///   it. Test frames can be sent by both parties to verify the functionality of
-///   the TCP channel when no other frame has arrived for a long time. The
-///   standard defines the idle time as t3 timeout with a default value of 20
-///   seconds and it can be changed in the protocol parameters in the D2000
-struct UFrame {
-	start_dt_activation: bool,
-	start_dt_confirmation: bool,
+///   the TCP channel when no other frame has arrived for a long time.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct UFrame {
+	pub start_dt_activation: bool,
+	pub start_dt_confirmation: bool,
 
-	stop_dt_activation: bool,
-	stop_dt_confirmation: bool,
+	pub stop_dt_activation: bool,
+	pub stop_dt_confirmation: bool,
 
-	test_fr_activation: bool,
-	test_fr_confirmation: bool,
+	pub test_fr_activation: bool,
+	pub test_fr_confirmation: bool,
 }
 
 impl UFrame {

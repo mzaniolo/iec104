@@ -8,6 +8,7 @@ use crate::{
 	types_id::TypeId,
 };
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Asdu {
 	pub type_id: TypeId,
 	pub cot: Cot,
@@ -22,6 +23,7 @@ pub struct Asdu {
 impl Asdu {
 	#[instrument]
 	pub fn parse(bytes: &[u8]) -> Result<Self, AsduError> {
+		tracing::trace!("Parsing ASDU: {:?}", bytes);
 		let type_id: TypeId = bytes[0].into();
 
 		let sequence = bytes[1] & 0b1000_0000 != 0;

@@ -17,6 +17,7 @@ pub struct Qds {
 }
 
 impl Qds {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let nt = byte & 0b0100_0000 != 0;
@@ -26,6 +27,7 @@ impl Qds {
 		Qds { iv, nt, sb, bl, ov }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -51,6 +53,7 @@ pub struct SeqQd {
 }
 
 impl SeqQd {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let ca = byte & 0b0100_0000 != 0;
@@ -59,6 +62,7 @@ impl SeqQd {
 		SeqQd { iv, ca, cy, seq }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -86,6 +90,7 @@ pub struct Qdp {
 }
 
 impl Qdp {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let iv = byte & 0b1000_0000 != 0;
 		let nt = byte & 0b0100_0000 != 0;
@@ -95,6 +100,7 @@ impl Qdp {
 		Qdp { iv, nt, sb, bl, ei }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.iv as u8) << 7;
@@ -116,12 +122,14 @@ pub struct Qos {
 }
 
 impl Qos {
+	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
 		let ql = byte & 0b0000_0001 != 0;
 		Qos { se, ql }
 	}
 
+	#[must_use]
 	pub const fn to_byte(&self) -> u8 {
 		let mut byte: u8 = 0;
 		byte |= (self.se as u8) << 7;
