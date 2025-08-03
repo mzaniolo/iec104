@@ -1,4 +1,4 @@
-use snafu::{ResultExt as _, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use tracing::instrument;
 
 use crate::{
@@ -24,46 +24,53 @@ impl Asdu {
 	#[instrument]
 	pub fn parse(bytes: &[u8]) -> Result<Self, AsduError> {
 		tracing::trace!("Parsing ASDU: {:?}", bytes);
-		let type_id: TypeId = bytes[0].into();
+		let type_id: TypeId = (*bytes.first().context(NotEnoughBytes)?).into();
 
-		let sequence = bytes[1] & 0b1000_0000 != 0;
-		let num_objs = bytes[1] & 0b0111_1111;
+		let byte = bytes.get(1).context(NotEnoughBytes)?;
+		let sequence = byte & 0b1000_0000 != 0;
+		let num_objs = byte & 0b0111_1111;
 
-		let test = bytes[2] & 0b1000_0000 != 0;
-		let positive = bytes[2] & 0b0100_0000 != 0;
-		let cot = (bytes[2] & 0b0011_1111).try_into().context(InvalidCot)?;
+		let byte = bytes.get(2).context(NotEnoughBytes)?;
+		let test = byte & 0b1000_0000 != 0;
+		let positive = byte & 0b0100_0000 != 0;
+		let cot = (byte & 0b0011_1111).try_into().context(InvalidCot)?;
 
-		let originator_address = bytes[3];
+		let originator_address = *bytes.get(3).context(NotEnoughBytes)?;
 
-		let address_field = u16::from_be_bytes([bytes[5], bytes[4]]);
+		let address_field = u16::from_le_bytes([
+			*bytes.get(4).context(NotEnoughBytes)?,
+			*bytes.get(5).context(NotEnoughBytes)?,
+		]);
 
 		let object_size = type_id.size();
-		let remaining_bytes = bytes[6..].len();
+		let remaining_bytes = bytes.get(6..).context(NotEnoughBytes)?;
+		let remaining_bytes_size = remaining_bytes.len();
 
 		// Check if the remaining bytes are a multiple of the object size
 		// If it's a sequence we need to know the first address. So the first object has
 		// object_size + 3 bytes for the address. The subsequent chunks only
 		// have the object_size.
 		let is_multiple = if sequence {
-			(remaining_bytes - 3) % object_size != 0
+			(remaining_bytes_size - 3) % object_size != 0
 		} else {
-			remaining_bytes % (object_size + 3) != 0
+			remaining_bytes_size % (object_size + 3) != 0
 		};
 
 		// Check if the number of objects is correct
 		// Here we have the same problem as above.
 		let num_objs_expected = if sequence {
-			(remaining_bytes - 3) / object_size != num_objs.into()
+			(remaining_bytes_size - 3) / object_size != num_objs.into()
 		} else {
-			remaining_bytes / (object_size + 3) != num_objs.into()
+			remaining_bytes_size / (object_size + 3) != num_objs.into()
 		};
 
 		if is_multiple || num_objs_expected {
-			NumberOfObjects { num_objs, object_size, remaining_bytes }.fail()?;
+			NumberOfObjects { num_objs, object_size, remaining_bytes: remaining_bytes_size }
+				.fail()?;
 		}
 
 		let information_objects =
-			InformationObject::from_bytes(type_id, sequence, num_objs, &bytes[6..])
+			InformationObject::from_bytes(type_id, sequence, num_objs, remaining_bytes)
 				.context(InvalidInformationObject)?;
 
 		Ok(Self {
@@ -139,6 +146,12 @@ pub enum AsduError {
 	#[snafu(display("Too many objects. Max number of objects is 127, got {num_objs} objects."))]
 	TooManyObjects {
 		num_objs: usize,
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+
+	#[snafu(display("Not enough bytes"))]
+	NotEnoughBytes {
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},

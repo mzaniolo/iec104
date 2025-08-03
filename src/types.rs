@@ -50,6 +50,12 @@ pub enum ParseError {
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},
+	#[snafu(display("Failed to convert to sized slice"))]
+	SizedSlice {
+		source: std::array::TryFromSliceError,
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
 }
 
 pub trait ToBytes {

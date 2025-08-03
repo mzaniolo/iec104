@@ -1,7 +1,8 @@
+use snafu::OptionExt as _;
 use tracing::instrument;
 
 use crate::types::{
-	FromBytes, ParseError, ToBytes,
+	FromBytes, NotEnoughBytes, ParseError, ToBytes,
 	information_elements::{Lpc, Nva, R32, Sva},
 };
 
@@ -129,8 +130,8 @@ pub struct PMeNa1 {
 impl FromBytes for PMeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let nva = Nva::from_bytes(&bytes[0..2]);
-		let qpm = Qpm::from_byte(bytes[2]);
+		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qpm })
 	}
 }
@@ -156,8 +157,8 @@ pub struct PMeNb1 {
 impl FromBytes for PMeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let sva = Sva::from_bytes(&bytes[0..2]);
-		let qpm = Qpm::from_byte(bytes[2]);
+		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qpm })
 	}
 }
@@ -183,8 +184,8 @@ pub struct PMeNc1 {
 impl FromBytes for PMeNc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let r32 = R32::from_bytes(&bytes[0..4]);
-		let qpm = Qpm::from_byte(bytes[4]);
+		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let qpm = Qpm::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { r32, qpm })
 	}
 }
@@ -208,7 +209,7 @@ pub struct PAcNa1 {
 impl FromBytes for PAcNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
-		let qpa = Qpa::from_byte(bytes[0]);
+		let qpa = Qpa::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { qpa })
 	}
 }

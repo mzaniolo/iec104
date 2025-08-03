@@ -1,9 +1,9 @@
-use snafu::ResultExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use tracing::instrument;
 
 use crate::{
 	asdu::Asdu,
-	error::{self, Error, InvalidAsdu},
+	error::{self, Error, InvalidAsdu, NotEnoughBytes, SizedSlice},
 };
 
 pub(crate) const TELEGRAN_HEADER: u8 = 0x68;
@@ -32,14 +32,13 @@ impl Apdu {
 			return error::InvalidLength.fail()?;
 		}
 
-		let control_fields = &data[2..6];
+		let control_fields = data[2..6].try_into().context(SizedSlice)?;
 		let frame = if length == 4_u8 {
 			Frame::from_control_fields(control_fields)
 		} else {
-			Frame::from_asdu(control_fields, &data[6..])
+			Frame::from_asdu(control_fields, data.get(6..).context(NotEnoughBytes)?)
 		}?;
 
-		#[allow(clippy::expect_used)]
 		Ok(Self { length, frame })
 	}
 
@@ -62,7 +61,7 @@ pub enum Frame {
 }
 
 impl Frame {
-	fn from_control_fields(control_fields: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
 		match control_fields[0] & 0b0000_0011 {
 			0b0000_0011 => Ok(Frame::U(UFrame::from_control_fields(control_fields)?)),
 			0b0000_0001 => Ok(Frame::S(SFrame::from_control_fields(control_fields)?)),
@@ -70,7 +69,7 @@ impl Frame {
 		}
 	}
 
-	fn from_asdu(control_fields: &[u8], asdu: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Box<Error>> {
 		Ok(Frame::I(IFrame::from_asdu(control_fields, asdu)?))
 	}
 
@@ -103,7 +102,7 @@ pub struct IFrame {
 
 impl IFrame {
 	#[instrument]
-	fn from_asdu(control_fields: &[u8], asdu: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Box<Error>> {
 		if (control_fields[0] & 0b0000_0001) != 0 || (control_fields[2] & 0b0000_0001) != 0 {
 			return error::InvalidIFrameControlFields.fail()?;
 		}
@@ -142,7 +141,7 @@ pub struct SFrame {
 
 impl SFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
 		if control_fields[0] != 0b0000_0001 || control_fields[1] != 0b0000_0000 {
 			return error::InvalidSFrameControlFields.fail()?;
 		}
@@ -191,7 +190,7 @@ pub struct UFrame {
 
 impl UFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
 		if control_fields[1] != 0 || control_fields[2] != 0 || control_fields[3] != 0 {
 			return error::InvalidUFrameControlFields.fail()?;
 		}

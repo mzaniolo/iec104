@@ -81,6 +81,17 @@ pub enum Error {
 		#[snafu(implicit)]
 		context: SpanTraceWrapper,
 	},
+	#[snafu(display("Failed to convert to sized slice"))]
+	SizedSlice {
+		source: std::array::TryFromSliceError,
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
+	#[snafu(display("Not enough bytes"))]
+	NotEnoughBytes {
+		#[snafu(implicit)]
+		context: SpanTraceWrapper,
+	},
 
 	#[snafu(whatever, display("{message}{context}\n{source:?}"))]
 	Whatever {

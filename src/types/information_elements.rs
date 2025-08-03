@@ -137,7 +137,7 @@ pub struct Vti {
 
 impl Vti {
 	#[must_use]
-	pub const fn from_byte(bytes: &[u8]) -> Self {
+	pub const fn from_byte(bytes: [u8; 2]) -> Self {
 		let value = bytes[0] & 0b0111_1111;
 		let transient = bytes[0] & 0b1000_0000 != 0;
 		let qds = Qds::from_byte(bytes[1]);
@@ -163,8 +163,8 @@ pub struct Bsi {
 
 impl Bsi {
 	#[must_use]
-	pub const fn from_byte(bytes: &[u8]) -> Self {
-		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
+	pub const fn from_byte(bytes: [u8; 4]) -> Self {
+		let value = u32::from_le_bytes(bytes);
 		Bsi { value }
 	}
 
@@ -183,8 +183,8 @@ pub struct Nva {
 
 impl Nva {
 	#[must_use]
-	pub const fn from_bytes(bytes: &[u8]) -> Self {
-		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
+	pub const fn from_bytes(bytes: [u8; 2]) -> Self {
+		let value = u16::from_le_bytes(bytes);
 		Nva { value }
 	}
 
@@ -203,8 +203,8 @@ pub struct Sva {
 
 impl Sva {
 	#[must_use]
-	pub const fn from_bytes(bytes: &[u8]) -> Self {
-		let value = u16::from_be_bytes([bytes[1], bytes[0]]);
+	pub const fn from_bytes(bytes: [u8; 2]) -> Self {
+		let value = u16::from_le_bytes(bytes);
 		Sva { value }
 	}
 
@@ -223,8 +223,8 @@ pub struct R32 {
 
 impl R32 {
 	#[must_use]
-	pub const fn from_bytes(bytes: &[u8]) -> Self {
-		let value = f32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
+	pub const fn from_bytes(bytes: [u8; 4]) -> Self {
+		let value = f32::from_le_bytes(bytes);
 		R32 { value }
 	}
 
@@ -245,8 +245,8 @@ pub struct Bcr {
 
 impl Bcr {
 	#[must_use]
-	pub const fn from_byte(bytes: &[u8]) -> Self {
-		let value = u32::from_be_bytes([bytes[3], bytes[2], bytes[1], bytes[0]]);
+	pub const fn from_byte(bytes: [u8; 4]) -> Self {
+		let value = u32::from_le_bytes(bytes);
 		Bcr { value }
 	}
 

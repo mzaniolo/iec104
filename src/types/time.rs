@@ -16,7 +16,7 @@ pub struct Cp24Time2a {
 
 impl Cp24Time2a {
 	#[instrument]
-	pub fn from_bytes(bytes: &[u8]) -> Result<Self, ParseTimeError> {
+	pub fn from_bytes(bytes: &[u8; 3]) -> Result<Self, ParseTimeError> {
 		let ms = u16::from_be_bytes([bytes[1], bytes[0]]);
 		let min = bytes[2] & 0b0011_1111;
 		let iv = bytes[2] & 0b1000_0000 != 0;
@@ -49,8 +49,8 @@ pub struct Cp16Time2a {
 
 impl Cp16Time2a {
 	#[instrument]
-	pub fn from_bytes(bytes: &[u8]) -> Result<Self, ParseTimeError> {
-		let ms = u16::from_be_bytes([bytes[1], bytes[0]]);
+	pub fn from_bytes(bytes: [u8; 2]) -> Result<Self, ParseTimeError> {
+		let ms = u16::from_le_bytes(bytes);
 		if ms > 59999 {
 			return MillisecondsError.fail()?;
 		}
@@ -88,7 +88,7 @@ pub struct Cp56Time2a {
 
 impl Cp56Time2a {
 	#[instrument]
-	pub fn from_bytes(bytes: &[u8]) -> Result<Self, ParseTimeError> {
+	pub fn from_bytes(bytes: &[u8; 7]) -> Result<Self, ParseTimeError> {
 		let ms = u16::from_be_bytes([bytes[1], bytes[0]]);
 		let iv = bytes[2] & 0b1000_0000 != 0;
 		let min = bytes[2] & 0b0011_1111;
