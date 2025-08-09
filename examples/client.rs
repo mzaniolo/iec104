@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use iec_60870_5_104::{
+use iec104::{
 	asdu::Asdu,
 	client::{Client, OnNewObjects},
 	config::ClientConfig,

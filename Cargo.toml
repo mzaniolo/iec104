@@ -1,7 +1,22 @@
 [package]
-name = "iec-60870-5-104"
+name = "iec104"
 version = "0.1.0"
 edition = "2024"
+authors = ["Matheus Zaniolo <mgzaniolo@gmail.com>"]
+description = "A rust implementation of the IEC-60870-5-104 protocol."
+license = "MIT"
+repository = "https://github.com/mzaniolo/iec104"
+homepage = "https://github.com/mzaniolo/iec104"
+documentation = "https://docs.rs/iec104"
+readme = "README.md"
+categories = ["network-programming"]
+keywords = [
+    "iec-60870-5-104",
+    "iec60870-5-104",
+    "60870-5-104",
+    "iec104",
+    "SCADA",
+]
 
 [dependencies]
 async-trait = "0.1.88"

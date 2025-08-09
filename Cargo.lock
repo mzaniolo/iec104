@@ -182,7 +182,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "iec-60870-5-104"
+name = "iec104"
 version = "0.1.0"
 dependencies = [
  "async-trait",
