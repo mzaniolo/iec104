@@ -159,6 +159,6 @@ pub enum CotError {
 	InvalidCot {
 		value: u8,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 }

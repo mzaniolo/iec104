@@ -395,7 +395,7 @@ pub struct CScNa1 {
 
 impl FromBytes for CScNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let sco = Sco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { sco })
 	}
@@ -403,7 +403,7 @@ impl FromBytes for CScNa1 {
 
 impl ToBytes for CScNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.sco.to_byte());
 		Ok(())
 	}
@@ -418,7 +418,7 @@ pub struct CdcNa1 {
 
 impl FromBytes for CdcNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let dco = Dco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { dco })
 	}
@@ -426,7 +426,7 @@ impl FromBytes for CdcNa1 {
 
 impl ToBytes for CdcNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.dco.to_byte());
 		Ok(())
 	}
@@ -441,7 +441,7 @@ pub struct CrcNa1 {
 
 impl FromBytes for CrcNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let rco = Rco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { rco })
 	}
@@ -449,7 +449,7 @@ impl FromBytes for CrcNa1 {
 
 impl ToBytes for CrcNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.rco.to_byte());
 		Ok(())
 	}
@@ -466,7 +466,7 @@ pub struct CSeNa1 {
 
 impl FromBytes for CSeNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qos })
@@ -475,7 +475,7 @@ impl FromBytes for CSeNa1 {
 
 impl ToBytes for CSeNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.nva.to_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
@@ -493,7 +493,7 @@ pub struct CSeNb1 {
 
 impl FromBytes for CSeNb1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qos })
@@ -502,7 +502,7 @@ impl FromBytes for CSeNb1 {
 
 impl ToBytes for CSeNb1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.sva.to_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
@@ -520,7 +520,7 @@ pub struct CSeNc1 {
 
 impl FromBytes for CSeNc1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { r32, qos })
@@ -529,7 +529,7 @@ impl FromBytes for CSeNc1 {
 
 impl ToBytes for CSeNc1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.r32.to_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
@@ -545,7 +545,7 @@ pub struct CBoNa1 {
 
 impl FromBytes for CBoNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let bsi = Bsi::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		Ok(Self { bsi })
 	}
@@ -553,7 +553,7 @@ impl FromBytes for CBoNa1 {
 
 impl ToBytes for CBoNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.bsi.to_bytes());
 		Ok(())
 	}
@@ -570,7 +570,7 @@ pub struct CScTa1 {
 
 impl FromBytes for CScTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let sco = Sco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(1..8).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -582,7 +582,7 @@ impl FromBytes for CScTa1 {
 
 impl ToBytes for CScTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.sco.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -600,7 +600,7 @@ pub struct CdcTa1 {
 
 impl FromBytes for CdcTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let dco = Dco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(1..8).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -612,7 +612,7 @@ impl FromBytes for CdcTa1 {
 
 impl ToBytes for CdcTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.dco.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -630,7 +630,7 @@ pub struct CrcTa1 {
 
 impl FromBytes for CrcTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let rco = Rco::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(1..8).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -642,7 +642,7 @@ impl FromBytes for CrcTa1 {
 
 impl ToBytes for CrcTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.rco.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -662,7 +662,7 @@ pub struct CSeTa1 {
 
 impl FromBytes for CSeTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
@@ -675,7 +675,7 @@ impl FromBytes for CSeTa1 {
 
 impl ToBytes for CSeTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.nva.to_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
@@ -696,7 +696,7 @@ pub struct CSeTb1 {
 
 impl FromBytes for CSeTb1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
@@ -709,7 +709,7 @@ impl FromBytes for CSeTb1 {
 
 impl ToBytes for CSeTb1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.sva.to_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
@@ -730,7 +730,7 @@ pub struct CSeTc1 {
 
 impl FromBytes for CSeTc1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
@@ -743,7 +743,7 @@ impl FromBytes for CSeTc1 {
 
 impl ToBytes for CSeTc1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.r32.to_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
@@ -762,7 +762,7 @@ pub struct CBoTa1 {
 
 impl FromBytes for CBoTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let (bsi_bytes, time_bytes) = bytes.split_at(4);
 		let bsi = Bsi::from_byte(*bsi_bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(time_bytes.try_into().context(SizedSlice)?)
@@ -773,7 +773,7 @@ impl FromBytes for CBoTa1 {
 
 impl ToBytes for CBoTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.bsi.to_bytes());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -789,7 +789,7 @@ pub struct CIcNa1 {
 
 impl FromBytes for CIcNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let qoi = Qoi::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { qoi })
 	}
@@ -797,7 +797,7 @@ impl FromBytes for CIcNa1 {
 
 impl ToBytes for CIcNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.qoi.to_byte());
 		Ok(())
 	}
@@ -814,7 +814,7 @@ pub struct CCiNa1 {
 
 impl FromBytes for CCiNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let byte = *bytes.first().context(NotEnoughBytes)?;
 		let rqt = Rqt::from_byte(byte & 0b0011_1111);
 		let frz = Frz::from_byte(byte >> 6);
@@ -824,7 +824,7 @@ impl FromBytes for CCiNa1 {
 
 impl ToBytes for CCiNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		let mut byte: u8 = 0;
 		byte |= self.rqt.to_byte() & 0b0011_1111;
 		byte |= (self.frz as u8) << 6;
@@ -841,14 +841,14 @@ pub struct CRdNa1 {
 
 impl FromBytes for CRdNa1 {
 	#[instrument]
-	fn from_bytes(_: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(_: &[u8]) -> Result<Self, ParseError> {
 		Ok(Self {})
 	}
 }
 
 impl ToBytes for CRdNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		Ok(())
 	}
 }
@@ -862,7 +862,7 @@ pub struct CCsNa1 {
 
 impl FromBytes for CCsNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let time = Cp56Time2a::from_bytes(bytes.first_chunk::<7>().context(NotEnoughBytes)?)
 			.context(ParseTimeTag)?;
 		Ok(Self { time })
@@ -871,7 +871,7 @@ impl FromBytes for CCsNa1 {
 
 impl ToBytes for CCsNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
 	}
@@ -886,7 +886,7 @@ pub struct CTsNa1 {
 
 impl FromBytes for CTsNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let tsc = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		Ok(Self { tsc })
 	}
@@ -894,7 +894,7 @@ impl FromBytes for CTsNa1 {
 
 impl ToBytes for CTsNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.tsc.to_le_bytes());
 		Ok(())
 	}
@@ -909,7 +909,7 @@ pub struct CRpNa1 {
 
 impl FromBytes for CRpNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let qrp = Qrp::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { qrp })
 	}
@@ -917,7 +917,7 @@ impl FromBytes for CRpNa1 {
 
 impl ToBytes for CRpNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.qrp.to_byte());
 		Ok(())
 	}
@@ -932,7 +932,7 @@ pub struct CCdNa1 {
 
 impl FromBytes for CCdNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let delay = Cp16Time2a::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?)
 			.context(ParseTimeTag)?;
 		Ok(Self { delay })
@@ -941,7 +941,7 @@ impl FromBytes for CCdNa1 {
 
 impl ToBytes for CCdNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.delay.to_bytes());
 		Ok(())
 	}
@@ -958,7 +958,7 @@ pub struct CTsTa1 {
 
 impl FromBytes for CTsTa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let (tsc_bytes, time_bytes) = bytes.split_at(2);
 		let tsc = u16::from_le_bytes(tsc_bytes.try_into().context(SizedSlice)?);
 		let time = Cp56Time2a::from_bytes(time_bytes.try_into().context(SizedSlice)?)
@@ -969,7 +969,7 @@ impl FromBytes for CTsTa1 {
 
 impl ToBytes for CTsTa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.tsc.to_le_bytes());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())

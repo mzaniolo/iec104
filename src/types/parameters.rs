@@ -129,7 +129,7 @@ pub struct PMeNa1 {
 
 impl FromBytes for PMeNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qpm })
@@ -138,7 +138,7 @@ impl FromBytes for PMeNa1 {
 
 impl ToBytes for PMeNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.nva.to_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
@@ -156,7 +156,7 @@ pub struct PMeNb1 {
 
 impl FromBytes for PMeNb1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qpm })
@@ -165,7 +165,7 @@ impl FromBytes for PMeNb1 {
 
 impl ToBytes for PMeNb1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.sva.to_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
@@ -183,7 +183,7 @@ pub struct PMeNc1 {
 
 impl FromBytes for PMeNc1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { r32, qpm })
@@ -192,7 +192,7 @@ impl FromBytes for PMeNc1 {
 
 impl ToBytes for PMeNc1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.r32.to_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
@@ -208,7 +208,7 @@ pub struct PAcNa1 {
 
 impl FromBytes for PAcNa1 {
 	#[instrument]
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>> {
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let qpa = Qpa::from_byte(*bytes.first().context(NotEnoughBytes)?);
 		Ok(Self { qpa })
 	}
@@ -216,7 +216,7 @@ impl FromBytes for PAcNa1 {
 
 impl ToBytes for PAcNa1 {
 	#[instrument]
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.push(self.qpa.to_byte());
 		Ok(())
 	}

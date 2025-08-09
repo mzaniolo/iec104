@@ -23,7 +23,7 @@ use crate::{error::SpanTraceWrapper, types::time::ParseTimeError, types_id::Type
 const ADDRESS_SIZE: usize = 3;
 
 pub trait FromBytes: Sized {
-	fn from_bytes(bytes: &[u8]) -> Result<Self, Box<ParseError>>;
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError>;
 }
 
 #[derive(Debug, Snafu)]
@@ -33,33 +33,33 @@ pub enum ParseError {
 	ParseTimeTag {
 		source: ParseTimeError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Invalid type"))]
 	InvalidType {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Not implemented yet"))]
 	NotImplemented {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Not enough bytes"))]
 	NotEnoughBytes {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Failed to convert to sized slice"))]
 	SizedSlice {
 		source: std::array::TryFromSliceError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 }
 
 pub trait ToBytes {
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>>;
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,7 +136,7 @@ impl InformationObject {
 		sequence: bool,
 		num_objs: u8,
 		bytes: &[u8],
-	) -> Result<Vec<GenericObject<T>>, Box<ParseError>> {
+	) -> Result<Vec<GenericObject<T>>, ParseError> {
 		let object_size = type_id.size();
 		tracing::trace!(
 			"Building information objects. Object size: {object_size}. Bytes: {:?}",
@@ -157,7 +157,7 @@ impl InformationObject {
 			let other_chunks = other_chunks.chunks_exact(object_size);
 			// TODO: Do we really need to make sure of this here?
 			if !other_chunks.remainder().is_empty() {
-				return NotEnoughBytes.fail()?;
+				return NotEnoughBytes.fail();
 			}
 
 			let other_objs = other_chunks
@@ -172,9 +172,9 @@ impl InformationObject {
 					let object = T::from_bytes(&chunk[ADDRESS_SIZE..])?;
 					Ok(GenericObject { address, object })
 				})
-				.collect::<Result<Vec<_>, Box<ParseError>>>()?;
+				.collect::<Result<Vec<_>, ParseError>>()?;
 			objs.extend(other_objs);
-			Ok::<_, Box<ParseError>>(objs)
+			Ok::<_, ParseError>(objs)
 		} else {
 			// If it's not a sequence we get the address of each object in the first 3
 			// bytes.
@@ -186,7 +186,7 @@ impl InformationObject {
 					let object = T::from_bytes(&chunk[3..])?;
 					Ok(GenericObject { address, object })
 				})
-				.collect::<Result<Vec<_>, Box<ParseError>>>()?)
+				.collect::<Result<Vec<_>, ParseError>>()?)
 		}
 	}
 
@@ -194,7 +194,7 @@ impl InformationObject {
 	fn serialize_objects<T: FromBytes + ToBytes>(
 		objects: &[GenericObject<T>],
 		buffer: &mut Vec<u8>,
-	) -> Result<(), Box<ParseError>> {
+	) -> Result<(), ParseError> {
 		//TODO: Handle sequence
 
 		for obj in objects {
@@ -214,7 +214,7 @@ impl InformationObject {
 		sequence: bool,
 		num_objs: u8,
 		bytes: &[u8],
-	) -> Result<Self, Box<ParseError>> {
+	) -> Result<Self, ParseError> {
 		Ok(match type_id {
 			TypeId::M_SP_NA_1 => InformationObject::MSpNa1(Self::build_objects::<MSpNa1>(
 				type_id, sequence, num_objs, bytes,
@@ -524,7 +524,7 @@ impl InformationObject {
 		}
 	}
 
-	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<ParseError>> {
+	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		match self {
 			InformationObject::MSpNa1(objs) => Self::serialize_objects(objs, buffer),
 			InformationObject::MSpTa1(objs) => Self::serialize_objects(objs, buffer),

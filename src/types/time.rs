@@ -21,10 +21,10 @@ impl Cp24Time2a {
 		let min = bytes[2] & 0b0011_1111;
 		let iv = bytes[2] & 0b1000_0000 != 0;
 		if ms > 59999 {
-			return MillisecondsError.fail()?;
+			return MillisecondsError.fail();
 		}
 		if min > 59 {
-			return MinutesError.fail()?;
+			return MinutesError.fail();
 		}
 		Ok(Self { ms, min, iv })
 	}
@@ -52,7 +52,7 @@ impl Cp16Time2a {
 	pub fn from_bytes(bytes: [u8; 2]) -> Result<Self, ParseTimeError> {
 		let ms = u16::from_le_bytes(bytes);
 		if ms > 59999 {
-			return MillisecondsError.fail()?;
+			return MillisecondsError.fail();
 		}
 		Ok(Self { ms })
 	}
@@ -100,22 +100,22 @@ impl Cp56Time2a {
 		let year = bytes[6] & 0b0111_1111;
 
 		if ms > 59999 {
-			return MillisecondsError.fail()?;
+			return MillisecondsError.fail();
 		}
 		if min > 59 {
-			return MinutesError.fail()?;
+			return MinutesError.fail();
 		}
 		if hour > 23 {
-			return HoursError.fail()?;
+			return HoursError.fail();
 		}
 		if day > 31 {
-			return DaysError.fail()?;
+			return DaysError.fail();
 		}
 		if month > 12 {
-			return MonthsError.fail()?;
+			return MonthsError.fail();
 		}
 		if year > 99 {
-			return YearsError.fail()?;
+			return YearsError.fail();
 		}
 		Ok(Self { ms, iv, min, summer_time, hour, weekday, day, month, year })
 	}
@@ -141,31 +141,31 @@ pub enum ParseTimeError {
 	#[snafu(display("Milliseconds out of range"))]
 	Milliseconds {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Minutes out of range"))]
 	Minutes {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Hours out of range"))]
 	Hours {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Days out of range"))]
 	Days {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Months out of range"))]
 	Months {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Years out of range"))]
 	Years {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 }

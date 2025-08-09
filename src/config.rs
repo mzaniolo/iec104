@@ -12,16 +12,18 @@ pub struct ProtocolConfig {
 	#[serde(with = "humantime_serde")]
 	pub t2: Duration,
 	/// The timeout for considering the connection to be non-functional and
-	/// close it. The default is 15 seconds. Default is 12
+	/// close it. The default is 15 seconds.
 	#[serde(with = "humantime_serde")]
 	pub t1: Duration,
 	/// The period for connections attempts. The default is 10 second.
 	#[serde(with = "humantime_serde")]
 	pub t0: Duration,
 	/// Maximum number of sent and unacknowledged ASDUs. Default is 12.
-	pub k: u32,
+	pub k: u16,
 	/// Latest acknowledge after receiving w I format APDUs. Default is 8
-	pub w: u32,
+	pub w: u16,
+
+	pub originator_address: u16,
 }
 
 /// The client TLS configuration
@@ -68,6 +70,7 @@ impl Default for ProtocolConfig {
 			t0: Duration::from_secs(10),
 			k: 12,
 			w: 8,
+			originator_address: 1,
 		}
 	}
 }

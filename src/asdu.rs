@@ -65,8 +65,12 @@ impl Asdu {
 		};
 
 		if is_multiple || num_objs_expected {
-			NumberOfObjects { num_objs, object_size, remaining_bytes: remaining_bytes_size }
-				.fail()?;
+			return NumberOfObjects {
+				num_objs,
+				object_size,
+				remaining_bytes: remaining_bytes_size,
+			}
+			.fail();
 		}
 
 		let information_objects =
@@ -123,7 +127,7 @@ pub enum AsduError {
 	InvalidCot {
 		source: CotError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display(
@@ -134,25 +138,25 @@ pub enum AsduError {
 		object_size: usize,
 		remaining_bytes: usize,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid information object"))]
 	InvalidInformationObject {
-		source: Box<ParseError>,
+		source: ParseError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Too many objects. Max number of objects is 127, got {num_objs} objects."))]
 	TooManyObjects {
 		num_objs: usize,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Not enough bytes"))]
 	NotEnoughBytes {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 }

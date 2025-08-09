@@ -11,25 +11,25 @@ pub(crate) const APUD_MAX_LENGTH: u8 = 253;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Apdu {
-	length: u8,
-	frame: Frame,
+	pub length: u8,
+	pub frame: Frame,
 }
 
 impl Apdu {
 	#[instrument]
-	pub fn from_bytes(data: &[u8]) -> Result<Self, Box<Error>> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, Error> {
 		// Check if the data is long enough to contain the APDU header
 		if data.len() < 6 {
-			return error::ApduTooShort.fail()?;
+			return error::ApduTooShort.fail();
 		}
 		if data[0] != TELEGRAN_HEADER {
-			return error::InvalidTelegramHeader.fail()?;
+			return error::InvalidTelegramHeader.fail();
 		}
 
 		let length = data[1];
 
 		if length > APUD_MAX_LENGTH {
-			return error::InvalidLength.fail()?;
+			return error::InvalidLength.fail();
 		}
 
 		let control_fields = data[2..6].try_into().context(SizedSlice)?;
@@ -42,7 +42,7 @@ impl Apdu {
 		Ok(Self { length, frame })
 	}
 
-	pub fn to_bytes(&self) -> Result<Vec<u8>, Box<Error>> {
+	pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
 		// The total length of the APDU is the length of the frame plus 2 bytes, one for
 		// the header and one for the length
 		let mut bytes = Vec::with_capacity(self.length as usize + 2);
@@ -61,26 +61,26 @@ pub enum Frame {
 }
 
 impl Frame {
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
 		match control_fields[0] & 0b0000_0011 {
 			0b0000_0011 => Ok(Frame::U(UFrame::from_control_fields(control_fields)?)),
 			0b0000_0001 => Ok(Frame::S(SFrame::from_control_fields(control_fields)?)),
-			_ => error::InvalidControlField.fail()?,
+			_ => error::InvalidControlField.fail(),
 		}
 	}
 
-	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Error> {
 		Ok(Frame::I(IFrame::from_asdu(control_fields, asdu)?))
 	}
 
-	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
+	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
 		match self {
 			Frame::I(i) => i.to_bytes(buffer),
 			Frame::S(s) => s.to_bytes(buffer),
 			Frame::U(u) => u.to_bytes(buffer),
 		}
 	}
-	pub fn to_apdu_bytes(&self) -> Result<Vec<u8>, Box<Error>> {
+	pub fn to_apdu_bytes(&self) -> Result<Vec<u8>, Error> {
 		let mut buffer = Vec::new();
 		buffer.push(TELEGRAN_HEADER);
 		buffer.push(0); // length placeholder
@@ -102,26 +102,27 @@ pub struct IFrame {
 
 impl IFrame {
 	#[instrument]
-	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Box<Error>> {
+	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Error> {
 		if (control_fields[0] & 0b0000_0001) != 0 || (control_fields[2] & 0b0000_0001) != 0 {
-			return error::InvalidIFrameControlFields.fail()?;
+			return error::InvalidIFrameControlFields.fail();
 		}
 		Ok(Self {
-			send_sequence_number: u16::from_be_bytes([control_fields[1], control_fields[0] >> 1]),
-			receive_sequence_number: u16::from_be_bytes([
-				control_fields[3],
-				control_fields[2] >> 1,
-			]),
+			send_sequence_number: u16::from_le_bytes(
+				control_fields[0..2].try_into().context(SizedSlice)?,
+			) >> 1,
+			receive_sequence_number: u16::from_le_bytes(
+				control_fields[2..4].try_into().context(SizedSlice)?,
+			) >> 1,
 			asdu: Asdu::parse(asdu).context(InvalidAsdu)?,
 		})
 	}
 
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
-		let rsn = self.receive_sequence_number.to_le_bytes();
-		let ssn = self.send_sequence_number.to_le_bytes();
-		buffer.push(ssn[0] << 1);
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+		let rsn = (self.receive_sequence_number << 1).to_le_bytes();
+		let ssn = (self.send_sequence_number << 1).to_le_bytes();
+		buffer.push(ssn[0]);
 		buffer.push(ssn[1]);
-		buffer.push(rsn[0] << 1);
+		buffer.push(rsn[0]);
 		buffer.push(rsn[1]);
 		self.asdu.to_bytes(buffer).context(InvalidAsdu)?;
 		Ok(())
@@ -141,23 +142,22 @@ pub struct SFrame {
 
 impl SFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
 		if control_fields[0] != 0b0000_0001 || control_fields[1] != 0b0000_0000 {
-			return error::InvalidSFrameControlFields.fail()?;
+			return error::InvalidSFrameControlFields.fail();
 		}
 		Ok(Self {
-			receive_sequence_number: u16::from_be_bytes([
-				control_fields[3],
-				control_fields[2] >> 1,
-			]),
+			receive_sequence_number: u16::from_le_bytes(
+				control_fields[2..4].try_into().context(SizedSlice)?,
+			) >> 1,
 		})
 	}
 
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
-		let rsn = self.receive_sequence_number.to_le_bytes();
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+		let rsn = (self.receive_sequence_number << 1).to_le_bytes();
 		buffer.push(0b0000_0001);
 		buffer.push(0b0000_0000);
-		buffer.push(rsn[0] << 1);
+		buffer.push(rsn[0]);
 		buffer.push(rsn[1]);
 		Ok(())
 	}
@@ -190,9 +190,9 @@ pub struct UFrame {
 
 impl UFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Box<Error>> {
+	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
 		if control_fields[1] != 0 || control_fields[2] != 0 || control_fields[3] != 0 {
-			return error::InvalidUFrameControlFields.fail()?;
+			return error::InvalidUFrameControlFields.fail();
 		}
 		Ok(Self {
 			start_dt_activation: control_fields[0] & 0b0000_0100 != 0,
@@ -206,7 +206,7 @@ impl UFrame {
 		})
 	}
 
-	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Box<Error>> {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
 		let mut byte: u8 = 0b0000_0011;
 		if self.start_dt_activation {
 			byte |= 0b0000_0100;
@@ -247,13 +247,13 @@ mod tests {
 	};
 
 	#[test]
-	fn test_s_frame() -> Result<(), Box<Error>> {
+	fn test_s_frame() -> Result<(), Error> {
 		let bytes = [0x68, 0x04, 0x01, 0x00, 0x7E, 0x14];
 		let apdu = Apdu::from_bytes(&bytes)?;
 		assert_eq!(apdu.length, 4);
 
 		let Frame::S(s_frame) = &apdu.frame else { panic!("Frame was expected to be an S-frame") };
-		assert_eq!(s_frame.receive_sequence_number, 5183);
+		assert_eq!(s_frame.receive_sequence_number, 2623);
 
 		let apdu_bytes = apdu.to_bytes()?;
 		assert_eq!(apdu_bytes, bytes);
@@ -262,7 +262,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_i_frame() -> Result<(), Box<Error>> {
+	fn test_i_frame() -> Result<(), Error> {
 		let bytes = [
 			0x68, 0x34, 0x5A, 0x14, 0x7C, 0x00, 0x0B, 0x07, 0x03, 0x00, 0x0C, 0x00, 0x10, 0x30,
 			0x00, 0xBE, 0x09, 0x00, 0x11, 0x30, 0x00, 0x90, 0x09, 0x00, 0x0E, 0x30, 0x00, 0x75,
@@ -274,7 +274,7 @@ mod tests {
 
 		let Frame::I(i_frame) = &apdu.frame else { panic!("Frame was expected to be an I-frame") };
 
-		assert_eq!(i_frame.send_sequence_number, 5165);
+		assert_eq!(i_frame.send_sequence_number, 2605);
 		assert_eq!(i_frame.receive_sequence_number, 62);
 		assert_eq!(i_frame.asdu.type_id, TypeId::M_ME_NB_1);
 		assert_eq!(i_frame.asdu.information_objects.len(), 7);
@@ -352,7 +352,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_i_frame_command() -> Result<(), Box<Error>> {
+	fn test_i_frame_command() -> Result<(), Error> {
 		let bytes = [
 			0x68, 0x0E, 0x4E, 0x14, 0x7C, 0x00, 0x65, 0x01, 0x0A, 0x00, 0x0C, 0x00, 0x00, 0x00,
 			0x00, 0x05,
@@ -361,7 +361,7 @@ mod tests {
 		assert_eq!(apdu.length, 14);
 
 		let Frame::I(i_frame) = &apdu.frame else { panic!("Frame was expected to be an I-frame") };
-		assert_eq!(i_frame.send_sequence_number, 5159);
+		assert_eq!(i_frame.send_sequence_number, 2599);
 		assert_eq!(i_frame.receive_sequence_number, 62);
 		assert_eq!(i_frame.asdu.type_id, TypeId::C_CI_NA_1);
 		assert_eq!(i_frame.asdu.information_objects.len(), 1);
@@ -386,7 +386,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_u_frame() -> Result<(), Box<Error>> {
+	fn test_u_frame() -> Result<(), Error> {
 		let bytes = [0x68, 0x04, 0x01, 0x00, 0x7E, 0x14];
 		let apdu = Apdu::from_bytes(&bytes)?;
 		assert_eq!(apdu.length, 4);

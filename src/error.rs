@@ -8,9 +8,9 @@ use crate::asdu::AsduError;
 #[derive(Debug)]
 pub struct SpanTraceWrapper(SpanTrace);
 
-impl snafu::GenerateImplicitData for SpanTraceWrapper {
+impl snafu::GenerateImplicitData for Box<SpanTraceWrapper> {
 	fn generate() -> Self {
-		Self(SpanTrace::capture())
+		Box::new(SpanTraceWrapper(SpanTrace::capture()))
 	}
 }
 
@@ -30,67 +30,67 @@ pub enum Error {
 	#[snafu(display("Invalid data{context}"))]
 	ApduTooShort {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid telegram header{context}"))]
 	InvalidTelegramHeader {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid length{context}"))]
 	InvalidLength {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid control fields{context}"))]
 	InvalidControlFields {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid control field{context}"))]
 	InvalidControlField {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid S-frame control fields{context}"))]
 	InvalidSFrameControlFields {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid U-frame control fields{context}"))]
 	InvalidUFrameControlFields {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid I-frame control fields{context}"))]
 	InvalidIFrameControlFields {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(display("Invalid ASDU{context}"))]
 	InvalidAsdu {
 		source: AsduError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Failed to convert to sized slice"))]
 	SizedSlice {
 		source: std::array::TryFromSliceError,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 	#[snafu(display("Not enough bytes"))]
 	NotEnoughBytes {
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 
 	#[snafu(whatever, display("{message}{context}\n{source:?}"))]
@@ -99,6 +99,6 @@ pub enum Error {
 		#[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
 		source: Option<Box<dyn std::error::Error + Send + Sync>>,
 		#[snafu(implicit)]
-		context: SpanTraceWrapper,
+		context: Box<SpanTraceWrapper>,
 	},
 }
