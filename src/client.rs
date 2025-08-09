@@ -104,8 +104,7 @@ pub struct Client {
 	config: ClientConfig,
 	callback: Arc<dyn OnNewObjects + Send + Sync>,
 	receive_task: Option<JoinHandle<Result<(), Error>>>,
-	read_connection: Option<ReadHalf<Connection>>,
-	write_connection: Option<WriteHalf<Connection>>,
+	connection: Option<Connection>,
 	write_tx: Option<mpsc::Sender<Asdu>>,
 	out_buffer_full: Arc<AtomicBool>,
 }
@@ -117,11 +116,9 @@ impl Client {
 	) -> Result<Self, Error> {
 		let connection =
 			Self::make_connection(&config).await.whatever_context("Error making connection")?;
-		let (read_connection, write_connection) = tokio::io::split(connection);
 		Ok(Self {
 			config,
-			read_connection: Some(read_connection),
-			write_connection: Some(write_connection),
+			connection: Some(connection),
 			callback: Arc::new(callback),
 			receive_task: None,
 			write_tx: None,
@@ -130,9 +127,14 @@ impl Client {
 	}
 
 	async fn make_connection(config: &ClientConfig) -> Result<Connection, Error> {
-		let stream = TcpStream::connect(format!("{}:{}", config.address, config.port))
-			.await
-			.whatever_context("Error connecting")?;
+		let stream = tokio::time::timeout(
+			config.protocol.t0,
+			TcpStream::connect(format!("{}:{}", config.address, config.port)),
+		)
+		.await
+		.whatever_context("Connection timeout")?
+		.whatever_context("Error connecting")?;
+
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
 			Connection::Tls(
@@ -146,8 +148,6 @@ impl Client {
 		})
 	}
 
-	// TODO: Remove this
-	#[allow(clippy::result_large_err)]
 	fn make_tls_connector(tls: &TlsClientConfig) -> Result<TlsConnector, Error> {
 		let root_cert: Option<Certificate> = tls
 			.server_certificate
@@ -191,77 +191,42 @@ impl Client {
 		Ok(TlsConnector::from(connector))
 	}
 
-	async fn send_frame(
-		write_connection: &mut WriteHalf<Connection>,
-		frame: &Frame,
-	) -> Result<(), Error> {
-		write_connection
-			.write_all(
-				&frame
-					.to_apdu_bytes()
-					.whatever_context("Error converting frame to APDU and encoding")?,
-			)
-			.await
-			.whatever_context("Error sending data")?;
-		Ok(())
-	}
-
 	pub async fn start_receiving(&mut self) -> Result<(), Error> {
 		if self.receive_task.is_some() {
 			whatever!("Receive task already running");
 		}
 
-		let (mut read_connection, mut write_connection) =
-			if let (Some(read_connection), Some(write_connection)) =
-				(self.read_connection.take(), self.write_connection.take())
-			{
-				(read_connection, write_connection)
-			} else {
-				tracing::debug!("No connection to send or receive data. Creating a new one");
-				let connection = Self::make_connection(&self.config)
-					.await
-					.whatever_context("Error making connection")?;
-				tokio::io::split(connection)
-			};
-
-		let mut buffer = [0; 255];
-		Self::send_frame(&mut write_connection, &START_DT_ACT_FRAME)
-			.await
-			.whatever_context("Error sending startDT activation")?;
-
-		let apdu = tokio::time::timeout(
-			self.config.protocol.t1,
-			Self::receive_apdu(&mut read_connection, &mut buffer),
-		)
-		.await
-		.whatever_context("Timeout waiting for startDT activation")?;
-
-		let apdu = apdu.whatever_context("Error receiving APDU")?;
-		if let Frame::U(u) = apdu.frame {
-			if !u.start_dt_confirmation {
-				whatever!("StartDT activation not confirmed");
-			}
-			//TODO: Do I need to check the rest?
-		}
-
 		let (tx, rx) = mpsc::channel(1024);
-		self.write_tx = Some(tx);
+
 		let callback = self.callback.clone();
 		let config = self.config.clone();
 		let out_buffer_full = self.out_buffer_full.clone();
 
-		self.receive_task = Some(tokio::spawn(async move {
-			Self::receive_task(
-				read_connection,
-				write_connection,
-				callback,
-				config,
-				rx,
-				out_buffer_full,
-			)
+		let mut connection_handler = ConnectionHandler::new(
+			self.connection.take().unwrap_or(
+				Self::make_connection(&self.config)
+					.await
+					.whatever_context("Error making connection")?,
+			),
+			callback,
+			config,
+			rx,
+			out_buffer_full,
+		);
+
+		connection_handler
+			.send_start_dt()
 			.await
-			.inspect_err(|e| tracing::error!("Error in receiving the task: {e:?}"))
+			.whatever_context("Error sending startDT activation")?;
+
+		self.receive_task = Some(tokio::spawn(async move {
+			connection_handler
+				.receive_task()
+				.await
+				.inspect_err(|e| tracing::error!("Error in receiving the task: {e:?}"))
 		}));
+
+		self.write_tx = Some(tx);
 
 		Ok(())
 	}
@@ -276,6 +241,96 @@ impl Client {
 		} else {
 			whatever!("No write connection. Start receiving first");
 		}
+		Ok(())
+	}
+}
+
+impl Debug for Client {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Client {{receiving: {} }}", self.receive_task.is_some())
+	}
+}
+
+struct ConnectionHandler {
+	read_connection: ReadHalf<Connection>,
+	write_connection: WriteHalf<Connection>,
+	callback: Arc<dyn OnNewObjects + Send + Sync>,
+	config: ClientConfig,
+	rx: mpsc::Receiver<Asdu>,
+	out_buffer_full: Arc<AtomicBool>,
+	t1_u: Pin<Box<tokio::time::Sleep>>,
+	t1_i: Pin<Box<tokio::time::Sleep>>,
+	t2: Pin<Box<tokio::time::Sleep>>,
+	t3: Pin<Box<tokio::time::Sleep>>,
+	unacknowledged_seq_num: Vec<(u16, Instant)>,
+	sent_counter: u16,
+	received_counter: u16,
+	unacknowledged_rcv_frames: u16,
+	outstanding_test_fr_con_messages: u16,
+}
+
+impl ConnectionHandler {
+	pub fn new(
+		connection: Connection,
+		callback: Arc<dyn OnNewObjects + Send + Sync>,
+		config: ClientConfig,
+		rx: mpsc::Receiver<Asdu>,
+		out_buffer_full: Arc<AtomicBool>,
+	) -> Self {
+		let (read_connection, write_connection) = tokio::io::split(connection);
+		Self {
+			read_connection,
+			write_connection,
+			callback,
+			rx,
+			out_buffer_full,
+			t1_u: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
+			t1_i: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
+			t2: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
+			t3: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
+			unacknowledged_seq_num: Vec::with_capacity(config.protocol.k as usize),
+			sent_counter: 0,
+			received_counter: 0,
+			unacknowledged_rcv_frames: 0,
+			outstanding_test_fr_con_messages: 0,
+			config,
+		}
+	}
+	pub async fn send_start_dt(&mut self) -> Result<(), Error> {
+		let mut buffer = [0; 255];
+		Self::send_frame(&mut self.write_connection, &START_DT_ACT_FRAME)
+			.await
+			.whatever_context("Error sending startDT activation")?;
+
+		let apdu = tokio::time::timeout(
+			self.config.protocol.t1,
+			Self::receive_apdu(&mut self.read_connection, &mut buffer),
+		)
+		.await
+		.whatever_context("Timeout waiting for startDT activation")?;
+
+		let apdu = apdu.whatever_context("Error receiving APDU")?;
+		if let Frame::U(u) = apdu.frame {
+			if !u.start_dt_confirmation {
+				whatever!("StartDT activation not confirmed");
+			}
+			//TODO: Do I need to check the rest?
+		}
+
+		Ok(())
+	}
+	async fn send_frame(
+		write_connection: &mut WriteHalf<Connection>,
+		frame: &Frame,
+	) -> Result<(), Error> {
+		write_connection
+			.write_all(
+				&frame
+					.to_apdu_bytes()
+					.whatever_context("Error converting frame to APDU and encoding")?,
+			)
+			.await
+			.whatever_context("Error sending data")?;
 		Ok(())
 	}
 
@@ -298,108 +353,202 @@ impl Client {
 		Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 	}
 
-	async fn receive_task(
-		mut read_connection: ReadHalf<Connection>,
-		mut write_connection: WriteHalf<Connection>,
-		callback: Arc<dyn OnNewObjects + Send + Sync>,
-		config: ClientConfig,
-		mut rx: mpsc::Receiver<Asdu>,
-		out_buffer_full: Arc<AtomicBool>,
-	) -> Result<(), Error> {
-		// The t1 only start counting after we sent something. A month should be enough
-		let t1_u = tokio::time::sleep(*TIMER_UNSET);
-		let t1_i = tokio::time::sleep(*TIMER_UNSET);
-		let t2 = tokio::time::sleep(*TIMER_UNSET);
-		let t3 = tokio::time::sleep(config.protocol.t3);
-		tokio::pin!(t1_u);
-		tokio::pin!(t1_i);
-		tokio::pin!(t2);
-		tokio::pin!(t3);
+	async fn receive_task(mut self) -> Result<(), Error> {
+		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
 		let mut buffer = [0; 255];
-		let mut sent_counter: u16 = 0;
-		let mut received_counter: u16 = 0;
-		let mut unacknowledged_rcv_frames: u16 = 0;
-		let mut outstanding_test_fr_con_messages: u16 = 0;
-		let mut unacknowledged_seq_num: Vec<(u16, Instant)> =
-			Vec::with_capacity(config.protocol.k as usize);
 
 		loop {
 			select! {
-				apdu = Self::receive_apdu(&mut read_connection,	&mut buffer) => {
+				apdu = Self::receive_apdu(&mut self.read_connection,	&mut buffer) => {
 					if let Ok(apdu) = apdu {
 						match apdu.frame {
 							Frame::I(i) => {
-								Self::handle_receive_i_frame(&i, &mut received_counter, &mut sent_counter, &mut unacknowledged_seq_num, &out_buffer_full, &mut t1_i, &config, &mut unacknowledged_rcv_frames)?;
+								self.handle_receive_i_frame(&i)?;
 
 								// TODO: Should I spawn a task for it?
-								callback.on_new_objects(i.asdu.information_objects).await;
+								self.callback.on_new_objects(i.asdu.information_objects).await;
 							}
 							Frame::S(s) => {
-								tracing::debug!("Received S frame: {s:?}");
-								Self::check_sequence_acknowledge(&mut unacknowledged_seq_num, s.receive_sequence_number, sent_counter).whatever_context("Error checking sequence acknowledge")?;
-
-								out_buffer_full.store(unacknowledged_seq_num.len() >= config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
-
-								if !unacknowledged_seq_num.is_empty() {
-									t1_i.as_mut().reset(unacknowledged_seq_num.first().whatever_context("Unacknowledged sequence number is empty")?.1 + config.protocol.t1);
-								}
-
+								self.handle_receive_s_frame(&s)?;
 							}
 							Frame::U(u) => {
-								Self::handle_receive_u_frame(&u, &mut write_connection, &mut outstanding_test_fr_con_messages, &mut t1_u).await?;
+								self.handle_receive_u_frame(&u).await?;
 							}
 						}
-						t3.as_mut().reset(Instant::now() + config.protocol.t3);
+						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 					} else {
 						whatever!("Error receiving APDU");
 					}
 				}
-				Some(cmd) = rx.recv() => {
-					Self::handle_send_asdu(cmd, &mut sent_counter, received_counter, &mut write_connection, &mut unacknowledged_seq_num, config.protocol.k, &mut unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
+				Some(cmd) = self.rx.recv() => {
+					Self::handle_send_asdu(cmd, &mut self.sent_counter, self.received_counter, &mut self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
 
-					out_buffer_full.store(unacknowledged_seq_num.len() >= config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
+					self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
 
-					t2.as_mut().reset(unacknowledged_seq_num.first().whatever_context("Unacknowledged sequence number is empty")?.1 + config.protocol.t2);
+					self.t2.as_mut().reset(self.unacknowledged_seq_num.first().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t2);
 				}
-				_ = &mut t3 => {
+				_ = &mut self.t3 => {
 					tracing::debug!("t3 timeout. Sending test frame");
-					if outstanding_test_fr_con_messages > 2 {
+					if self.outstanding_test_fr_con_messages > 2 {
 						whatever!("Outstanding test frame confirmation messages is greater than 2. Closing connection");
 					}
-					Self::send_frame(&mut write_connection, &TEST_FR_ACT_FRAME).await.whatever_context("Error sending test frame")?;
-					outstanding_test_fr_con_messages += 1;
-					t3.as_mut().reset(Instant::now() + config.protocol.t3);
-					t1_u.as_mut().reset(Instant::now() + config.protocol.t1);
+					Self::send_frame(&mut self.write_connection, &TEST_FR_ACT_FRAME).await.whatever_context("Error sending test frame")?;
+					self.outstanding_test_fr_con_messages += 1;
+					self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
+					self.t1_u.as_mut().reset(Instant::now() + self.config.protocol.t1);
 
 				}
-				_ = &mut t2 => {
+				_ = &mut self.t2 => {
 					tracing::debug!("t2 timeout. Sending S frame");
-					Self::send_frame(&mut write_connection, &Frame::S(SFrame{receive_sequence_number: received_counter})).await.whatever_context("Error sending S frame")?;
-					unacknowledged_rcv_frames = 0;
-					t2.as_mut().reset(Instant::now() + *TIMER_UNSET);
+					Self::send_frame(&mut self.write_connection, &Frame::S(SFrame{receive_sequence_number: self.received_counter})).await.whatever_context("Error sending S frame")?;
+					self.unacknowledged_rcv_frames = 0;
+					self.t2.as_mut().reset(Instant::now() + *TIMER_UNSET);
 				}
-				_ = &mut t1_u => {
+				_ = &mut self.t1_u => {
 					whatever!("t1 for u frames timeout");
 				}
-				_ = &mut t1_i => {
+				_ = &mut self.t1_i => {
 					whatever!("t1 for i frames timeout");
 				}
 			}
-			if unacknowledged_rcv_frames > config.protocol.w {
+			if self.unacknowledged_rcv_frames > self.config.protocol.w {
 				tracing::debug!(
 					"Received more than w frames without acknowledgement. Sending S frame"
 				);
 				Self::send_frame(
-					&mut write_connection,
-					&Frame::S(SFrame { receive_sequence_number: received_counter }),
+					&mut self.write_connection,
+					&Frame::S(SFrame { receive_sequence_number: self.received_counter }),
 				)
 				.await
 				.whatever_context("Error sending S frame")?;
-				unacknowledged_rcv_frames = 0;
-				t2.as_mut().reset(Instant::now() + config.protocol.t2);
+				self.unacknowledged_rcv_frames = 0;
+				self.t2.as_mut().reset(Instant::now() + self.config.protocol.t2);
 			}
 		}
+	}
+
+	async fn handle_send_asdu(
+		asdu: Asdu,
+		sent_counter: &mut u16,
+		received_counter: u16,
+		write_connection: &mut WriteHalf<Connection>,
+		unacknowledged_seq_num: &mut Vec<(u16, Instant)>,
+		k: u16,
+		unacknowledged_rcv_frames: &mut u16,
+	) -> Result<(), Error> {
+		let frame = Frame::I(IFrame {
+			send_sequence_number: *sent_counter,
+			receive_sequence_number: received_counter,
+			asdu,
+		});
+
+		Self::send_frame(write_connection, &frame)
+			.await
+			.whatever_context("Error sending command")?;
+
+		// The modulo is to avoid overflow
+		*sent_counter = (*sent_counter + 1) % 32768;
+
+		if unacknowledged_seq_num.len() < k as usize {
+			unacknowledged_seq_num.push((*sent_counter, Instant::now()));
+		} else {
+			whatever!("Unacknowledged sequence number is full. Closing connection");
+		}
+
+		*unacknowledged_rcv_frames = 0;
+
+		Ok(())
+	}
+
+	fn handle_receive_i_frame(&mut self, i: &IFrame) -> Result<(), Error> {
+		tracing::debug!("Received I frame: {i:?}");
+		if i.send_sequence_number != self.received_counter {
+			whatever!(
+				"Received I frame with wrong sequence number. Expected: {}, Received: {}",
+				self.received_counter,
+				i.send_sequence_number
+			);
+		}
+
+		Self::check_sequence_acknowledge(
+			&mut self.unacknowledged_seq_num,
+			i.receive_sequence_number,
+			self.sent_counter,
+		)
+		.whatever_context("Error checking sequence acknowledge")?;
+
+		self.out_buffer_full.store(
+			self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize,
+			std::sync::atomic::Ordering::Relaxed,
+		);
+
+		if !self.unacknowledged_seq_num.is_empty() {
+			self.t1_i.as_mut().reset(
+				self.unacknowledged_seq_num
+					.first()
+					.whatever_context("Unacknowledged sequence number is empty")?
+					.1 + self.config.protocol.t1,
+			);
+		}
+
+		// The modulo is to avoid overflow
+		self.received_counter = (self.received_counter + 1) % 32768;
+		self.unacknowledged_rcv_frames += 1;
+
+		Ok(())
+	}
+
+	fn handle_receive_s_frame(&mut self, s: &SFrame) -> Result<(), Error> {
+		tracing::debug!("Received S frame: {s:?}");
+		Self::check_sequence_acknowledge(
+			&mut self.unacknowledged_seq_num,
+			s.receive_sequence_number,
+			self.sent_counter,
+		)
+		.whatever_context("Error checking sequence acknowledge")?;
+
+		self.out_buffer_full.store(
+			self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize,
+			std::sync::atomic::Ordering::Relaxed,
+		);
+
+		if !self.unacknowledged_seq_num.is_empty() {
+			self.t1_i.as_mut().reset(
+				self.unacknowledged_seq_num
+					.first()
+					.whatever_context("Unacknowledged sequence number is empty")?
+					.1 + self.config.protocol.t1,
+			);
+		}
+		Ok(())
+	}
+
+	async fn handle_receive_u_frame(&mut self, u: &UFrame) -> Result<(), Error> {
+		tracing::debug!("Received U frame: {u:?}");
+		if u.test_fr_activation {
+			Self::send_frame(&mut self.write_connection, &TEST_FR_CON_FRAME)
+				.await
+				.whatever_context("Error sending test frame")?;
+		} else if u.start_dt_activation {
+			tracing::debug!("StartDT activation");
+			//TODO: We already stated. We shouldn't be receiving this frame
+			//TOD: What else should we do here?
+			Self::send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
+				.await
+				.whatever_context("Error sending test frame")?;
+		} else if u.stop_dt_activation {
+			//TOD: What else should we do here?
+			Self::send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
+				.await
+				.whatever_context("Error sending test frame")?;
+		} else {
+			//This is a confirmation frame. Lets unset the t1_u timer
+			self.outstanding_test_fr_con_messages = 0;
+			self.t1_u.as_mut().reset(Instant::now() + *TIMER_UNSET);
+		}
+
+		Ok(())
 	}
 
 	// check if received sequence number is valid and remove the acknowledged ones
@@ -454,124 +603,6 @@ impl Client {
 		//TODO: Fix it
 		whatever!("Received frame with invalid sequence number");
 	}
-
-	async fn handle_send_asdu(
-		asdu: Asdu,
-		sent_counter: &mut u16,
-		received_counter: u16,
-		write_connection: &mut WriteHalf<Connection>,
-		unacknowledged_seq_num: &mut Vec<(u16, Instant)>,
-		k: u16,
-		unacknowledged_rcv_frames: &mut u16,
-	) -> Result<(), Error> {
-		let frame = Frame::I(IFrame {
-			send_sequence_number: *sent_counter,
-			receive_sequence_number: received_counter,
-			asdu,
-		});
-
-		Self::send_frame(write_connection, &frame)
-			.await
-			.whatever_context("Error sending command")?;
-
-		// The modulo is to avoid overflow
-		*sent_counter = (*sent_counter + 1) % 32768;
-
-		if unacknowledged_seq_num.len() < k as usize {
-			unacknowledged_seq_num.push((*sent_counter, Instant::now()));
-		} else {
-			whatever!("Unacknowledged sequence number is full. Closing connection");
-		}
-
-		*unacknowledged_rcv_frames = 0;
-
-		Ok(())
-	}
-
-	#[allow(clippy::too_many_arguments)]
-	fn handle_receive_i_frame(
-		i: &IFrame,
-		received_counter: &mut u16,
-		sent_counter: &mut u16,
-		unacknowledged_seq_num: &mut Vec<(u16, Instant)>,
-		out_buffer_full: &AtomicBool,
-		t1_i: &mut Pin<&mut tokio::time::Sleep>,
-		config: &ClientConfig,
-		unacknowledged_rcv_frames: &mut u16,
-	) -> Result<(), Error> {
-		tracing::debug!("Received I frame: {i:?}");
-		if i.send_sequence_number != *received_counter {
-			whatever!(
-				"Received I frame with wrong sequence number. Expected: {received_counter}, Received: {}",
-				i.send_sequence_number
-			);
-		}
-
-		Self::check_sequence_acknowledge(
-			unacknowledged_seq_num,
-			i.receive_sequence_number,
-			*sent_counter,
-		)
-		.whatever_context("Error checking sequence acknowledge")?;
-
-		out_buffer_full.store(
-			unacknowledged_seq_num.len() >= config.protocol.k as usize,
-			std::sync::atomic::Ordering::Relaxed,
-		);
-
-		if !unacknowledged_seq_num.is_empty() {
-			t1_i.as_mut().reset(
-				unacknowledged_seq_num
-					.first()
-					.whatever_context("Unacknowledged sequence number is empty")?
-					.1 + config.protocol.t1,
-			);
-		}
-
-		// The modulo is to avoid overflow
-		*received_counter = (*received_counter + 1) % 32768;
-		*unacknowledged_rcv_frames += 1;
-
-		Ok(())
-	}
-
-	async fn handle_receive_u_frame(
-		u: &UFrame,
-		write_connection: &mut WriteHalf<Connection>,
-		outstanding_test_fr_con_messages: &mut u16,
-		t1_u: &mut Pin<&mut tokio::time::Sleep>,
-	) -> Result<(), Error> {
-		tracing::debug!("Received U frame: {u:?}");
-		if u.test_fr_activation {
-			Self::send_frame(write_connection, &TEST_FR_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-		} else if u.start_dt_activation {
-			tracing::debug!("StartDT activation");
-			//TODO: We already stated. We shouldn't be receiving this frame
-			//TOD: What else should we do here?
-			Self::send_frame(write_connection, &START_DT_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-		} else if u.stop_dt_activation {
-			//TOD: What else should we do here?
-			Self::send_frame(write_connection, &STOP_DT_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-		} else {
-			//This is a confirmation frame. Lets unset the t1_u timer
-			*outstanding_test_fr_con_messages = 0;
-			t1_u.as_mut().reset(Instant::now() + *TIMER_UNSET);
-		}
-
-		Ok(())
-	}
-}
-
-impl Debug for Client {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "Client {{receiving: {} }}", self.read_connection.is_some())
-	}
 }
 
 #[cfg(test)]
@@ -584,10 +615,14 @@ mod tests {
 		let send_count = 100;
 
 		// Valid: seq_no matches send_count when buffer is empty
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 100, send_count).is_ok());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 100, send_count).is_ok()
+		);
 
 		// Invalid: seq_no doesn't match send_count
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 101, send_count).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 101, send_count).is_err()
+		);
 	}
 
 	#[test]
@@ -596,10 +631,14 @@ mod tests {
 		let k_buffer = vec![(100, now)];
 
 		// Valid: seq_no matches the single value in buffer
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 100, 101).is_ok());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 100, 101).is_ok()
+		);
 
 		// Invalid: seq_no doesn't match
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 101, 101).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 101, 101).is_err()
+		);
 	}
 
 	#[test]
@@ -608,12 +647,20 @@ mod tests {
 		let k_buffer = vec![(100, now), (101, now), (102, now)];
 
 		// Valid: seq_no within range
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 101, 103).is_ok());
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 102, 103).is_ok());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 101, 103).is_ok()
+		);
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 102, 103).is_ok()
+		);
 
 		// Invalid: seq_no outside range
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 98, 103).is_err());
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 103, 103).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 98, 103).is_err()
+		);
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 103, 103).is_err()
+		);
 	}
 
 	#[test]
@@ -622,13 +669,19 @@ mod tests {
 		let k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now)];
 
 		// Valid: seq_no in overflow range
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32767, 2).is_ok());
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 0, 2).is_ok());
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 1, 2).is_ok());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32767, 2).is_ok()
+		);
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 0, 2).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 1, 2).is_ok());
 
 		// Invalid: seq_no outside overflow range
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32764, 2).is_err());
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 2, 2).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32764, 2).is_err()
+		);
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 2, 2).is_err()
+		);
 	}
 
 	#[test]
@@ -637,13 +690,15 @@ mod tests {
 		let mut k_buffer = vec![(100, now), (101, now)];
 
 		// Valid: seq_no equals oldest_valid_seq_no (99)
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 99, 102).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 99, 102).is_ok());
 
 		// Test with wraparound
 		let mut k_buffer_wrap = vec![(0, now), (1, now)];
 
 		// Valid: seq_no equals oldest_valid_seq_no (32767)
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer_wrap, 32767, 2).is_ok());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer_wrap, 32767, 2).is_ok()
+		);
 	}
 
 	#[test]
@@ -652,7 +707,7 @@ mod tests {
 		let mut k_buffer = vec![(100, now), (101, now), (102, now)];
 
 		// Confirm sequence number 101
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 101, 103).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 101, 103).is_ok());
 
 		// Buffer should now only contain 102
 		assert_eq!(k_buffer, vec![(102, now)]);
@@ -664,7 +719,7 @@ mod tests {
 		let mut k_buffer = vec![(100, now), (101, now), (102, now), (103, now)];
 
 		// Confirm sequence number 102 (should remove 100, 101, 102)
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 102, 104).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 102, 104).is_ok());
 
 		// Buffer should now only contain 103
 		assert_eq!(k_buffer, vec![(103, now)]);
@@ -676,7 +731,7 @@ mod tests {
 		let mut k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now)];
 
 		// Confirm sequence number 32767
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 32767, 2).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 32767, 2).is_ok());
 
 		// Buffer should now contain 0, 1
 		assert_eq!(k_buffer, vec![(0, now), (1, now)]);
@@ -688,13 +743,19 @@ mod tests {
 		let k_buffer = vec![(100, now), (101, now)];
 
 		// Invalid: seq_no too low
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 98, 102).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 98, 102).is_err()
+		);
 
 		// Invalid: seq_no too high
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 103, 102).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 103, 102).is_err()
+		);
 
 		// Invalid: seq_no in middle but not in buffer
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 105, 102).is_err());
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 105, 102).is_err()
+		);
 	}
 
 	#[test]
@@ -703,11 +764,11 @@ mod tests {
 		let mut k_buffer = vec![(0, now)];
 
 		// Edge case: sequence number 0
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
 
 		// Edge case: sequence number 32767
 		let mut k_buffer_max = vec![(32767, now)];
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer_max, 32767, 0).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer_max, 32767, 0).is_ok());
 	}
 
 	#[test]
@@ -716,15 +777,25 @@ mod tests {
 		let k_buffer = vec![(32765, now), (32766, now), (32767, now), (0, now), (1, now)];
 
 		// Test various sequence numbers
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32764, 2).is_ok()); // Last acknowledged
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32765, 2).is_ok()); // Oldest
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32767, 2).is_ok()); // Pre-overflow
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 0, 2).is_ok()); // Overflow point
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 1, 2).is_ok()); // Post-overflow
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32764, 2).is_ok()
+		); // Last acknowledged
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32765, 2).is_ok()
+		); // Oldest
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32767, 2).is_ok()
+		); // Pre-overflow
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 0, 2).is_ok()); // Overflow point
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 1, 2).is_ok()); // Post-overflow
 
 		// Invalid cases
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 32763, 2).is_err()); // Too old
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer.clone(), 2, 2).is_err()); // Too new
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 32763, 2).is_err()
+		); // Too old
+		assert!(
+			ConnectionHandler::check_sequence_acknowledge(&mut k_buffer.clone(), 2, 2).is_err()
+		); // Too new
 	}
 
 	#[test]
@@ -733,7 +804,7 @@ mod tests {
 		let mut k_buffer = vec![(100, now), (101, now), (102, now), (103, now), (104, now)];
 
 		// Cleanup up to sequence number 102
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 102, 103).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 102, 103).is_ok());
 
 		// Should only have 103, 104 left
 		assert_eq!(k_buffer, vec![(103, now), (104, now)]);
@@ -745,7 +816,7 @@ mod tests {
 		let mut k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now), (2, now)];
 
 		// Cleanup up to sequence number 0
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
 
 		// Should only have 1, 2 left
 		assert_eq!(k_buffer, vec![(1, now), (2, now)]);
@@ -754,7 +825,7 @@ mod tests {
 	#[test]
 	fn test_cleanup_empty_buffer() {
 		let mut k_buffer = Vec::new();
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 100, 101).is_err());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 100, 101).is_err());
 		assert_eq!(k_buffer, vec![]);
 	}
 
@@ -764,7 +835,7 @@ mod tests {
 		let mut k_buffer = vec![(100, now), (101, now), (102, now)];
 
 		// Try to cleanup with sequence number that doesn't exist
-		assert!(Client::check_sequence_acknowledge(&mut k_buffer, 98, 103).is_err());
+		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 98, 103).is_err());
 
 		// Buffer should remain unchanged
 		assert_eq!(k_buffer, vec![(100, now), (101, now), (102, now)]);
