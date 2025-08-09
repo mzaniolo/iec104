@@ -1,4 +1,5 @@
 use std::{
+	collections::VecDeque,
 	fmt::Debug,
 	pin::Pin,
 	sync::{Arc, atomic::AtomicBool},
@@ -262,7 +263,7 @@ struct ConnectionHandler {
 	t1_i: Pin<Box<tokio::time::Sleep>>,
 	t2: Pin<Box<tokio::time::Sleep>>,
 	t3: Pin<Box<tokio::time::Sleep>>,
-	unacknowledged_seq_num: Vec<(u16, Instant)>,
+	unacknowledged_seq_num: VecDeque<(u16, Instant)>,
 	sent_counter: u16,
 	received_counter: u16,
 	unacknowledged_rcv_frames: u16,
@@ -288,7 +289,7 @@ impl ConnectionHandler {
 			t1_i: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
 			t2: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
 			t3: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
-			unacknowledged_seq_num: Vec::with_capacity(config.protocol.k as usize),
+			unacknowledged_seq_num: VecDeque::with_capacity(config.protocol.k as usize),
 			sent_counter: 0,
 			received_counter: 0,
 			unacknowledged_rcv_frames: 0,
@@ -386,7 +387,7 @@ impl ConnectionHandler {
 
 					self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
 
-					self.t2.as_mut().reset(self.unacknowledged_seq_num.first().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t2);
+					self.t2.as_mut().reset(self.unacknowledged_seq_num.front().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t2);
 				}
 				_ = &mut self.t3 => {
 					tracing::debug!("t3 timeout. Sending test frame");
@@ -433,7 +434,7 @@ impl ConnectionHandler {
 		sent_counter: &mut u16,
 		received_counter: u16,
 		write_connection: &mut WriteHalf<Connection>,
-		unacknowledged_seq_num: &mut Vec<(u16, Instant)>,
+		unacknowledged_seq_num: &mut VecDeque<(u16, Instant)>,
 		k: u16,
 		unacknowledged_rcv_frames: &mut u16,
 	) -> Result<(), Error> {
@@ -451,7 +452,7 @@ impl ConnectionHandler {
 		*sent_counter = (*sent_counter + 1) % 32768;
 
 		if unacknowledged_seq_num.len() < k as usize {
-			unacknowledged_seq_num.push((*sent_counter, Instant::now()));
+			unacknowledged_seq_num.push_back((*sent_counter, Instant::now()));
 		} else {
 			whatever!("Unacknowledged sequence number is full. Closing connection");
 		}
@@ -486,7 +487,7 @@ impl ConnectionHandler {
 		if !self.unacknowledged_seq_num.is_empty() {
 			self.t1_i.as_mut().reset(
 				self.unacknowledged_seq_num
-					.first()
+					.front()
 					.whatever_context("Unacknowledged sequence number is empty")?
 					.1 + self.config.protocol.t1,
 			);
@@ -516,7 +517,7 @@ impl ConnectionHandler {
 		if !self.unacknowledged_seq_num.is_empty() {
 			self.t1_i.as_mut().reset(
 				self.unacknowledged_seq_num
-					.first()
+					.front()
 					.whatever_context("Unacknowledged sequence number is empty")?
 					.1 + self.config.protocol.t1,
 			);
@@ -553,14 +554,14 @@ impl ConnectionHandler {
 
 	// check if received sequence number is valid and remove the acknowledged ones
 	fn check_sequence_acknowledge(
-		unacknowledged_seq_num: &mut Vec<(u16, Instant)>,
+		unacknowledged_seq_num: &mut VecDeque<(u16, Instant)>,
 		frame_rss: u16,
 		sent_counter: u16,
 	) -> Result<(), Error> {
 		let mut is_valid = false;
 
 		if let (Some(newest_seq_num), Some(oldest_seq_num)) =
-			(unacknowledged_seq_num.last(), unacknowledged_seq_num.first())
+			(unacknowledged_seq_num.back(), unacknowledged_seq_num.front())
 		{
 			// Two cases are required to reflect sequence number overflow
 			if oldest_seq_num.0 <= newest_seq_num.0 {
@@ -611,7 +612,7 @@ mod tests {
 
 	#[test]
 	fn test_empty_buffer_valid_sequence() {
-		let mut k_buffer = Vec::new();
+		let mut k_buffer = VecDeque::new();
 		let send_count = 100;
 
 		// Valid: seq_no matches send_count when buffer is empty
@@ -628,7 +629,7 @@ mod tests {
 	#[test]
 	fn test_single_value_buffer() {
 		let now = Instant::now();
-		let k_buffer = vec![(100, now)];
+		let k_buffer = VecDeque::from([(100, now)]);
 
 		// Valid: seq_no matches the single value in buffer
 		assert!(
@@ -644,7 +645,7 @@ mod tests {
 	#[test]
 	fn test_normal_range_no_overflow() {
 		let now = Instant::now();
-		let k_buffer = vec![(100, now), (101, now), (102, now)];
+		let k_buffer = VecDeque::from([(100, now), (101, now), (102, now)]);
 
 		// Valid: seq_no within range
 		assert!(
@@ -666,7 +667,7 @@ mod tests {
 	#[test]
 	fn test_overflow_scenario() {
 		let now = Instant::now();
-		let k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now)];
+		let k_buffer = VecDeque::from([(32766, now), (32767, now), (0, now), (1, now)]);
 
 		// Valid: seq_no in overflow range
 		assert!(
@@ -687,13 +688,13 @@ mod tests {
 	#[test]
 	fn test_oldest_valid_sequence_number() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(100, now), (101, now)];
+		let mut k_buffer = VecDeque::from([(100, now), (101, now)]);
 
 		// Valid: seq_no equals oldest_valid_seq_no (99)
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 99, 102).is_ok());
 
 		// Test with wraparound
-		let mut k_buffer_wrap = vec![(0, now), (1, now)];
+		let mut k_buffer_wrap = VecDeque::from([(0, now), (1, now)]);
 
 		// Valid: seq_no equals oldest_valid_seq_no (32767)
 		assert!(
@@ -704,7 +705,7 @@ mod tests {
 	#[test]
 	fn test_buffer_cleanup() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(100, now), (101, now), (102, now)];
+		let mut k_buffer = VecDeque::from([(100, now), (101, now), (102, now)]);
 
 		// Confirm sequence number 101
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 101, 103).is_ok());
@@ -716,7 +717,7 @@ mod tests {
 	#[test]
 	fn test_multiple_cleanup() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(100, now), (101, now), (102, now), (103, now)];
+		let mut k_buffer = VecDeque::from([(100, now), (101, now), (102, now), (103, now)]);
 
 		// Confirm sequence number 102 (should remove 100, 101, 102)
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 102, 104).is_ok());
@@ -728,7 +729,7 @@ mod tests {
 	#[test]
 	fn test_overflow_cleanup() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now)];
+		let mut k_buffer = VecDeque::from([(32766, now), (32767, now), (0, now), (1, now)]);
 
 		// Confirm sequence number 32767
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 32767, 2).is_ok());
@@ -740,7 +741,7 @@ mod tests {
 	#[test]
 	fn test_invalid_scenarios() {
 		let now = Instant::now();
-		let k_buffer = vec![(100, now), (101, now)];
+		let k_buffer = VecDeque::from([(100, now), (101, now)]);
 
 		// Invalid: seq_no too low
 		assert!(
@@ -761,20 +762,21 @@ mod tests {
 	#[test]
 	fn test_edge_cases() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(0, now)];
+		let mut k_buffer = VecDeque::from([(0, now)]);
 
 		// Edge case: sequence number 0
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
 
 		// Edge case: sequence number 32767
-		let mut k_buffer_max = vec![(32767, now)];
+		let mut k_buffer_max = VecDeque::from([(32767, now)]);
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer_max, 32767, 0).is_ok());
 	}
 
 	#[test]
 	fn test_complex_overflow_scenario() {
 		let now = Instant::now();
-		let k_buffer = vec![(32765, now), (32766, now), (32767, now), (0, now), (1, now)];
+		let k_buffer =
+			VecDeque::from([(32765, now), (32766, now), (32767, now), (0, now), (1, now)]);
 
 		// Test various sequence numbers
 		assert!(
@@ -801,7 +803,8 @@ mod tests {
 	#[test]
 	fn test_cleanup_function() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(100, now), (101, now), (102, now), (103, now), (104, now)];
+		let mut k_buffer =
+			VecDeque::from([(100, now), (101, now), (102, now), (103, now), (104, now)]);
 
 		// Cleanup up to sequence number 102
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 102, 103).is_ok());
@@ -813,7 +816,8 @@ mod tests {
 	#[test]
 	fn test_cleanup_with_overflow() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(32766, now), (32767, now), (0, now), (1, now), (2, now)];
+		let mut k_buffer =
+			VecDeque::from([(32766, now), (32767, now), (0, now), (1, now), (2, now)]);
 
 		// Cleanup up to sequence number 0
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 0, 1).is_ok());
@@ -824,7 +828,7 @@ mod tests {
 
 	#[test]
 	fn test_cleanup_empty_buffer() {
-		let mut k_buffer = Vec::new();
+		let mut k_buffer = VecDeque::new();
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 100, 101).is_err());
 		assert_eq!(k_buffer, vec![]);
 	}
@@ -832,7 +836,7 @@ mod tests {
 	#[test]
 	fn test_cleanup_no_match() {
 		let now = Instant::now();
-		let mut k_buffer = vec![(100, now), (101, now), (102, now)];
+		let mut k_buffer = VecDeque::from([(100, now), (101, now), (102, now)]);
 
 		// Try to cleanup with sequence number that doesn't exist
 		assert!(ConnectionHandler::check_sequence_acknowledge(&mut k_buffer, 98, 103).is_err());
