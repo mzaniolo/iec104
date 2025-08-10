@@ -1,8 +1,8 @@
 use std::{path::PathBuf, time::Duration};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProtocolConfig {
 	/// The period between sending test frames. The default is 20 seconds.
 	#[serde(with = "humantime_serde")]
@@ -27,7 +27,7 @@ pub struct ProtocolConfig {
 }
 
 /// The client TLS configuration
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TlsClientConfig {
 	/// Path to the client key; if not specified, it will be assumed
 	/// that the server is configured not to verify client
@@ -49,7 +49,7 @@ pub struct TlsClientConfig {
 	pub danger_disable_tls_verify: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientConfig {
 	/// The address of the server.
 	pub address: String,
