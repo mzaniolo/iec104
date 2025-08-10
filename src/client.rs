@@ -27,7 +27,6 @@ use crate::{
 	asdu::Asdu,
 	config::{ClientConfig, TlsClientConfig},
 	error::Error,
-	types::InformationObject,
 };
 
 lazy_static! {
@@ -98,7 +97,7 @@ impl AsyncWrite for Connection {
 
 #[async_trait]
 pub trait OnNewObjects {
-	async fn on_new_objects(&self, objects: InformationObject);
+	async fn on_new_objects(&self, asdu: Asdu);
 }
 
 pub struct Client {
@@ -368,7 +367,7 @@ impl ConnectionHandler {
 								self.handle_receive_i_frame(&i)?;
 
 								// TODO: Should I spawn a task for it?
-								self.callback.on_new_objects(i.asdu.information_objects).await;
+								self.callback.on_new_objects(i.asdu).await;
 							}
 							Frame::S(s) => {
 								self.handle_receive_s_frame(&s)?;

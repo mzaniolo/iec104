@@ -78,7 +78,7 @@ struct MyCallback;
 
 #[async_trait]
 impl OnNewObjects for MyCallback {
-	async fn on_new_objects(&self, _objects: InformationObject) {
+	async fn on_new_objects(&self, _asdu: Asdu) {
 		// tracing::info!("Received objects: {objects:?}");
 	}
 }
