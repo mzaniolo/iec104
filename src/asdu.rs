@@ -59,9 +59,9 @@ impl Asdu {
 		// Check if the number of objects is correct
 		// Here we have the same problem as above.
 		let num_objs_expected = if sequence {
-			(remaining_bytes_size - 3) / object_size != num_objs.into()
+			(remaining_bytes_size - 3) / object_size != num_objs as usize
 		} else {
-			remaining_bytes_size / (object_size + 3) != num_objs.into()
+			remaining_bytes_size / (object_size + 3) != num_objs as usize
 		};
 
 		if is_multiple || num_objs_expected {
