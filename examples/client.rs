@@ -1,7 +1,5 @@
 //! Example client for IEC 60870-5-104
 
-#![allow(clippy::expect_used, clippy::print_stdout)]
-
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -31,9 +29,10 @@ async fn main() -> Result<(), Whatever> {
 	let filter = EnvFilter::from("debug");
 	let layer = tracing_subscriber::fmt::layer().with_filter(filter);
 	tracing_subscriber::registry().with(layer).init();
-	let mut client =
-		Client::new(ClientConfig::default(), MyCallback).await.expect("Failed to create client");
-	client.start_receiving().await.expect("Failed to start receiving");
+	let mut client = Client::new(ClientConfig::default(), MyCallback)
+		.await
+		.whatever_context("Failed to create client")?;
+	client.start_receiving().await.whatever_context("Failed to start receiving")?;
 
 	let mut s1 = signal(SignalKind::interrupt()).whatever_context("Failed to create signal")?;
 	let mut s2 = signal(SignalKind::terminate()).whatever_context("Failed to create signal")?;

@@ -1,4 +1,4 @@
-#![allow(dead_code, missing_docs, clippy::missing_docs_in_private_items)]
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 pub mod apdu;
 pub mod asdu;

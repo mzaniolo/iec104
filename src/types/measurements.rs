@@ -326,7 +326,6 @@ pub struct MMeNc1 {
 impl FromBytes for MMeNc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		#[allow(clippy::unwrap_used)]
 		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { r32, qds })
