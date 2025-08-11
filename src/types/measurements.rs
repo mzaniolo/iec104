@@ -318,7 +318,7 @@ impl ToBytes for MMeTb1 {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MMeNc1 {
 	/// Short floating point
-	pub r32: R32,
+	pub value: f32,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -326,16 +326,16 @@ pub struct MMeNc1 {
 impl FromBytes for MMeNc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
-		Ok(Self { r32, qds })
+		Ok(Self { value, qds })
 	}
 }
 
 impl ToBytes for MMeNc1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -345,7 +345,7 @@ impl ToBytes for MMeNc1 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MMeTc1 {
 	/// Short floating point
-	pub r32: R32,
+	pub value: f32,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -355,20 +355,20 @@ pub struct MMeTc1 {
 impl FromBytes for MMeTc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp24Time2a::from_bytes(
 			bytes.get(5..8).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
 		)
 		.context(ParseTimeTag)?;
-		Ok(Self { r32, qds, time })
+		Ok(Self { value, qds, time })
 	}
 }
 
 impl ToBytes for MMeTc1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -766,7 +766,7 @@ impl ToBytes for MMeTe1 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MMeTf1 {
 	/// Short floating point
-	pub r32: R32,
+	pub value: f32,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -776,20 +776,20 @@ pub struct MMeTf1 {
 impl FromBytes for MMeTf1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(5..12).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
 		)
 		.context(ParseTimeTag)?;
-		Ok(Self { r32, qds, time })
+		Ok(Self { value, qds, time })
 	}
 }
 
 impl ToBytes for MMeTf1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())

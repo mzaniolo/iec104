@@ -3,7 +3,7 @@ use tracing::instrument;
 
 use crate::types::{
 	FromBytes, NotEnoughBytes, ParseError, ToBytes,
-	information_elements::{Lpc, Nva, R32, Sva},
+	information_elements::{Lpc, Nva, Sva},
 };
 
 /// Kind of parameter of measured value
@@ -173,10 +173,10 @@ impl ToBytes for PMeNb1 {
 }
 
 /// Parameter of short floating point value, measured value
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PMeNc1 {
 	/// Short floating point value
-	pub r32: R32,
+	pub value: f32,
 	/// Qualifier of parameter of measured value
 	pub qpm: Qpm,
 }
@@ -184,16 +184,16 @@ pub struct PMeNc1 {
 impl FromBytes for PMeNc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
-		Ok(Self { r32, qpm })
+		Ok(Self { value, qpm })
 	}
 }
 
 impl ToBytes for PMeNc1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
 	}

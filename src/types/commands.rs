@@ -3,7 +3,7 @@ use tracing::instrument;
 
 use crate::types::{
 	FromBytes, NotEnoughBytes, ParseError, ParseTimeTag, SizedSlice, ToBytes,
-	information_elements::{Bsi, Dpi, Nva, R32, SelectExecute, Spi, Sva},
+	information_elements::{Bsi, Dpi, Nva, SelectExecute, Spi, Sva},
 	quality_descriptors::Qos,
 	time::{Cp16Time2a, Cp56Time2a},
 };
@@ -513,7 +513,7 @@ impl ToBytes for CSeNb1 {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CSeNc1 {
 	/// Short floating point
-	pub r32: R32,
+	pub value: f32,
 	/// Qualifier of set point command
 	pub qos: Qos,
 }
@@ -521,16 +521,16 @@ pub struct CSeNc1 {
 impl FromBytes for CSeNc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
-		Ok(Self { r32, qos })
+		Ok(Self { value, qos })
 	}
 }
 
 impl ToBytes for CSeNc1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
 	}
@@ -721,7 +721,7 @@ impl ToBytes for CSeTb1 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CSeTc1 {
 	/// Short floating point
-	pub r32: R32,
+	pub value: f32,
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
@@ -731,20 +731,20 @@ pub struct CSeTc1 {
 impl FromBytes for CSeTc1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let r32 = R32::from_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let value = f32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(5..12).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
 		)
 		.context(ParseTimeTag)?;
-		Ok(Self { r32, qos, time })
+		Ok(Self { value, qos, time })
 	}
 }
 
 impl ToBytes for CSeTc1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.r32.to_bytes());
+		buffer.extend_from_slice(&self.value.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())

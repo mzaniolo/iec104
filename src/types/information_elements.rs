@@ -214,28 +214,6 @@ impl Sva {
 	}
 }
 
-/// Short floating point
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct R32 {
-	/// Value
-	pub value: f32,
-}
-
-impl R32 {
-	#[must_use]
-	pub const fn from_bytes(bytes: [u8; 4]) -> Self {
-		let value = f32::from_le_bytes(bytes);
-		R32 { value }
-	}
-
-	#[must_use]
-	pub const fn to_bytes(&self) -> [u8; 4] {
-		self.value.to_le_bytes()
-	}
-}
-
-impl Eq for R32 {}
-
 /// Binary counter reading
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct Bcr {
