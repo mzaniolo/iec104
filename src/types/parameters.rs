@@ -1,10 +1,7 @@
 use snafu::OptionExt as _;
 use tracing::instrument;
 
-use crate::types::{
-	FromBytes, NotEnoughBytes, ParseError, ToBytes,
-	information_elements::{Lpc, Nva, Sva},
-};
+use crate::types::{FromBytes, NotEnoughBytes, ParseError, ToBytes, information_elements::Lpc};
 
 /// Kind of parameter of measured value
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
@@ -122,7 +119,7 @@ impl Qpa {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct PMeNa1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Qualifier of parameter of measured value
 	pub qpm: Qpm,
 }
@@ -130,7 +127,7 @@ pub struct PMeNa1 {
 impl FromBytes for PMeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qpm })
 	}
@@ -139,7 +136,7 @@ impl FromBytes for PMeNa1 {
 impl ToBytes for PMeNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
 	}
@@ -149,7 +146,7 @@ impl ToBytes for PMeNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct PMeNb1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Qualifier of parameter of measured value
 	pub qpm: Qpm,
 }
@@ -157,7 +154,7 @@ pub struct PMeNb1 {
 impl FromBytes for PMeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qpm = Qpm::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qpm })
 	}
@@ -166,7 +163,7 @@ impl FromBytes for PMeNb1 {
 impl ToBytes for PMeNb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qpm.to_byte());
 		Ok(())
 	}

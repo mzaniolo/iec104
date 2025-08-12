@@ -169,7 +169,7 @@ impl ToBytes for MStTa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MBoNa1 {
 	/// Bit string of 32 bits
-	pub bsi: Bsi,
+	pub bsi: u32,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -177,7 +177,7 @@ pub struct MBoNa1 {
 impl FromBytes for MBoNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bsi = Bsi::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bsi = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { bsi, qds })
 	}
@@ -186,7 +186,7 @@ impl FromBytes for MBoNa1 {
 impl ToBytes for MBoNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.bsi.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -196,7 +196,7 @@ impl ToBytes for MBoNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNa1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -204,7 +204,7 @@ pub struct MMeNa1 {
 impl FromBytes for MMeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qds })
 	}
@@ -213,7 +213,7 @@ impl FromBytes for MMeNa1 {
 impl ToBytes for MMeNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -223,7 +223,7 @@ impl ToBytes for MMeNa1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MMeTa1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -233,7 +233,7 @@ pub struct MMeTa1 {
 impl FromBytes for MMeTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp24Time2a::from_bytes(
 			bytes.get(3..6).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -246,7 +246,7 @@ impl FromBytes for MMeTa1 {
 impl ToBytes for MMeTa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -257,7 +257,7 @@ impl ToBytes for MMeTa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNb1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -265,7 +265,7 @@ pub struct MMeNb1 {
 impl FromBytes for MMeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qds })
 	}
@@ -274,7 +274,7 @@ impl FromBytes for MMeNb1 {
 impl ToBytes for MMeNb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -284,7 +284,7 @@ impl ToBytes for MMeNb1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MMeTb1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -294,7 +294,7 @@ pub struct MMeTb1 {
 impl FromBytes for MMeTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp24Time2a::from_bytes(
 			bytes.get(3..6).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -307,7 +307,7 @@ impl FromBytes for MMeTb1 {
 impl ToBytes for MMeTb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -379,7 +379,7 @@ impl ToBytes for MMeTc1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MItNa1 {
 	/// Binary counter reading
-	pub bcr: Bcr,
+	pub bcr: u32,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -387,7 +387,7 @@ pub struct MItNa1 {
 impl FromBytes for MItNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bcr = Bcr::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bcr = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { bcr, qds })
 	}
@@ -396,7 +396,7 @@ impl FromBytes for MItNa1 {
 impl ToBytes for MItNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bcr.to_bytes());
+		buffer.extend_from_slice(&self.bcr.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -525,7 +525,7 @@ impl ToBytes for MEpTc1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MPsNa1 {
 	/// Bit string of 32 bits
-	pub bsi: Bsi,
+	pub bsi: u32,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -533,7 +533,7 @@ pub struct MPsNa1 {
 impl FromBytes for MPsNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bsi = Bsi::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bsi = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		Ok(Self { bsi, qds })
 	}
@@ -542,7 +542,7 @@ impl FromBytes for MPsNa1 {
 impl ToBytes for MPsNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.bsi.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		Ok(())
 	}
@@ -552,13 +552,13 @@ impl ToBytes for MPsNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNd1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 }
 
 impl FromBytes for MMeNd1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		Ok(Self { nva })
 	}
 }
@@ -566,7 +566,7 @@ impl FromBytes for MMeNd1 {
 impl ToBytes for MMeNd1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		Ok(())
 	}
 }
@@ -664,7 +664,7 @@ impl ToBytes for MStTb1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MBoTb1 {
 	/// Bit string of 32 bits
-	pub bsi: Bsi,
+	pub bsi: u32,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -674,7 +674,7 @@ pub struct MBoTb1 {
 impl FromBytes for MBoTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bsi = Bsi::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bsi = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(5..12).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -687,7 +687,7 @@ impl FromBytes for MBoTb1 {
 impl ToBytes for MBoTb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.bsi.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -698,7 +698,7 @@ impl ToBytes for MBoTb1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MMeTd1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -708,7 +708,7 @@ pub struct MMeTd1 {
 impl FromBytes for MMeTd1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -721,7 +721,7 @@ impl FromBytes for MMeTd1 {
 impl ToBytes for MMeTd1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -732,7 +732,7 @@ impl ToBytes for MMeTd1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MMeTe1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -742,7 +742,7 @@ pub struct MMeTe1 {
 impl FromBytes for MMeTe1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -755,7 +755,7 @@ impl FromBytes for MMeTe1 {
 impl ToBytes for MMeTe1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -799,7 +799,7 @@ impl ToBytes for MMeTf1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MItTb1 {
 	/// Binary counter reading
-	pub bcr: Bcr,
+	pub bcr: u32,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -809,7 +809,7 @@ pub struct MItTb1 {
 impl FromBytes for MItTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bcr = Bcr::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bcr = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(5..12).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -822,7 +822,7 @@ impl FromBytes for MItTb1 {
 impl ToBytes for MItTb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bcr.to_bytes());
+		buffer.extend_from_slice(&self.bcr.to_be_bytes());
 		buffer.push(self.qds.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())

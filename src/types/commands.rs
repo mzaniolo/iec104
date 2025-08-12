@@ -3,7 +3,7 @@ use tracing::instrument;
 
 use crate::types::{
 	FromBytes, NotEnoughBytes, ParseError, ParseTimeTag, SizedSlice, ToBytes,
-	information_elements::{Bsi, Dpi, Nva, SelectExecute, Spi, Sva},
+	information_elements::{Dpi, SelectExecute, Spi},
 	quality_descriptors::Qos,
 	time::{Cp16Time2a, Cp56Time2a},
 };
@@ -459,7 +459,7 @@ impl ToBytes for CrcNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeNa1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 }
@@ -467,7 +467,7 @@ pub struct CSeNa1 {
 impl FromBytes for CSeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qos })
 	}
@@ -476,7 +476,7 @@ impl FromBytes for CSeNa1 {
 impl ToBytes for CSeNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
 	}
@@ -486,7 +486,7 @@ impl ToBytes for CSeNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeNb1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 }
@@ -494,7 +494,7 @@ pub struct CSeNb1 {
 impl FromBytes for CSeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qos })
 	}
@@ -503,7 +503,7 @@ impl FromBytes for CSeNb1 {
 impl ToBytes for CSeNb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		Ok(())
 	}
@@ -540,13 +540,13 @@ impl ToBytes for CSeNc1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CBoNa1 {
 	/// Bit string of 32 bits
-	pub bsi: Bsi,
+	pub bsi: u32,
 }
 
 impl FromBytes for CBoNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bsi = Bsi::from_byte(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bsi = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		Ok(Self { bsi })
 	}
 }
@@ -554,7 +554,7 @@ impl FromBytes for CBoNa1 {
 impl ToBytes for CBoNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.bsi.to_le_bytes());
 		Ok(())
 	}
 }
@@ -653,7 +653,7 @@ impl ToBytes for CrcTa1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CSeTa1 {
 	/// Normalized value
-	pub nva: Nva,
+	pub nva: u16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
@@ -663,7 +663,7 @@ pub struct CSeTa1 {
 impl FromBytes for CSeTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = Nva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -676,7 +676,7 @@ impl FromBytes for CSeTa1 {
 impl ToBytes for CSeTa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.nva.to_bytes());
+		buffer.extend_from_slice(&self.nva.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -687,7 +687,7 @@ impl ToBytes for CSeTa1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CSeTb1 {
 	/// Scaled value
-	pub sva: Sva,
+	pub sva: u16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
@@ -697,7 +697,7 @@ pub struct CSeTb1 {
 impl FromBytes for CSeTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = Sva::from_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -710,7 +710,7 @@ impl FromBytes for CSeTb1 {
 impl ToBytes for CSeTb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.sva.to_bytes());
+		buffer.extend_from_slice(&self.sva.to_le_bytes());
 		buffer.push(self.qos.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
@@ -755,7 +755,7 @@ impl ToBytes for CSeTc1 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CBoTa1 {
 	/// Bit string of 32 bits
-	pub bsi: Bsi,
+	pub bsi: u32,
 	/// Time tag
 	pub time: Cp56Time2a,
 }
@@ -764,7 +764,7 @@ impl FromBytes for CBoTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
 		let (bsi_bytes, time_bytes) = bytes.split_at(4);
-		let bsi = Bsi::from_byte(*bsi_bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let bsi = u32::from_le_bytes(*bsi_bytes.first_chunk::<4>().context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(time_bytes.try_into().context(SizedSlice)?)
 			.context(ParseTimeTag)?;
 		Ok(Self { bsi, time })
@@ -774,7 +774,7 @@ impl FromBytes for CBoTa1 {
 impl ToBytes for CBoTa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bsi.to_bytes());
+		buffer.extend_from_slice(&self.bsi.to_le_bytes());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
 	}

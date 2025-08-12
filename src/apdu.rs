@@ -290,7 +290,7 @@ mod tests {
 		assert_eq!(objects.len(), 7);
 
 		assert_eq!(objects[0].address, 12304);
-		assert_eq!(objects[0].object.sva.value, 2494);
+		assert_eq!(objects[0].object.sva, 2494);
 		assert!(!objects[0].object.qds.iv);
 		assert!(!objects[0].object.qds.nt);
 		assert!(!objects[0].object.qds.sb);
@@ -298,7 +298,7 @@ mod tests {
 		assert!(!objects[0].object.qds.ov);
 
 		assert_eq!(objects[1].address, 12305);
-		assert_eq!(objects[1].object.sva.value, 2448);
+		assert_eq!(objects[1].object.sva, 2448);
 		assert!(!objects[1].object.qds.iv);
 		assert!(!objects[1].object.qds.nt);
 		assert!(!objects[1].object.qds.sb);
@@ -306,7 +306,7 @@ mod tests {
 		assert!(!objects[1].object.qds.ov);
 
 		assert_eq!(objects[2].address, 12302);
-		assert_eq!(objects[2].object.sva.value, 117);
+		assert_eq!(objects[2].object.sva, 117);
 		assert!(!objects[2].object.qds.iv);
 		assert!(!objects[2].object.qds.nt);
 		assert!(!objects[2].object.qds.sb);
@@ -314,7 +314,7 @@ mod tests {
 		assert!(!objects[2].object.qds.ov);
 
 		assert_eq!(objects[3].address, 12328);
-		assert_eq!(objects[3].object.sva.value, 2341);
+		assert_eq!(objects[3].object.sva, 2341);
 		assert!(!objects[3].object.qds.iv);
 		assert!(!objects[3].object.qds.nt);
 		assert!(!objects[3].object.qds.sb);
@@ -322,7 +322,7 @@ mod tests {
 		assert!(!objects[3].object.qds.ov);
 
 		assert_eq!(objects[4].address, 12329);
-		assert_eq!(objects[4].object.sva.value, 117);
+		assert_eq!(objects[4].object.sva, 117);
 		assert!(!objects[4].object.qds.iv);
 		assert!(!objects[4].object.qds.nt);
 		assert!(!objects[4].object.qds.sb);
@@ -330,7 +330,7 @@ mod tests {
 		assert!(!objects[4].object.qds.ov);
 
 		assert_eq!(objects[5].address, 12303);
-		assert_eq!(objects[5].object.sva.value, 2575);
+		assert_eq!(objects[5].object.sva, 2575);
 		assert!(!objects[5].object.qds.iv);
 		assert!(!objects[5].object.qds.nt);
 		assert!(!objects[5].object.qds.sb);
@@ -338,7 +338,7 @@ mod tests {
 		assert!(!objects[5].object.qds.ov);
 
 		assert_eq!(objects[6].address, 12334);
-		assert_eq!(objects[6].object.sva.value, 1454);
+		assert_eq!(objects[6].object.sva, 1454);
 		assert!(!objects[6].object.qds.iv);
 		assert!(!objects[6].object.qds.nt);
 		assert!(!objects[6].object.qds.sb);
