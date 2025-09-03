@@ -15,11 +15,12 @@ keywords = [
     "iec60870-5-104",
     "60870-5-104",
     "iec104",
-    "SCADA",
+    "SCADA"
 ]
 
 [dependencies]
 async-trait = "0.1.88"
+atomic_enum = "0.3.0"
 humantime-serde = "1.1.1"
 lazy_static = "1.5.0"
 serde = { version = "1.0.219", features = ["derive"] }
