@@ -24,7 +24,16 @@ use crate::{
 		errors::ClientError,
 	},
 	config::ClientConfig,
+	cot::Cot,
 	error::Error,
+	types::{
+		CBoNa1, CBoTa1, CScNa1, CScTa1, CdcNa1, CdcTa1, CrcNa1, CrcTa1, GenericObject,
+		InformationObjects,
+		commands::{Dco, Qu, Rco, Rcs, Sco},
+		information_elements::{Dpi, SelectExecute, Spi},
+		time::Cp56Time2a,
+	},
+	types_id::TypeId,
 };
 
 mod connection_handler;
@@ -213,6 +222,175 @@ impl Client {
 			return errors::NoWriteChannel.fail();
 		}
 		Ok(())
+	}
+
+	pub async fn send_command_sp(
+		&self,
+		common_address: u16,
+		ioa: u32,
+		value: Spi,
+		timestamp: Option<Cp56Time2a>,
+		select_execute: Option<SelectExecute>,
+		qu: Option<Qu>,
+	) -> Result<(), ClientError> {
+		let sco = Sco {
+			se: select_execute.unwrap_or(SelectExecute::Execute),
+			qu: qu.unwrap_or(Qu::Unspecified),
+			scs: value,
+		};
+		let (type_id, information_objects) = match timestamp {
+			Some(timestamp) => (
+				TypeId::C_SC_TA_1,
+				InformationObjects::CScTa1(vec![GenericObject {
+					address: ioa,
+					object: CScTa1 { sco, time: timestamp },
+				}]),
+			),
+			None => (
+				TypeId::C_SC_NA_1,
+				InformationObjects::CScNa1(vec![GenericObject {
+					address: ioa,
+					object: CScNa1 { sco },
+				}]),
+			),
+		};
+
+		self.send_asdu(Asdu {
+			type_id,
+			information_objects,
+			originator_address: 0,
+			address_field: common_address,
+			sequence: false,
+			test: false,
+			cot: Cot::Request,
+			positive: false,
+		})
+		.await
+	}
+
+	pub async fn send_command_dp(
+		&self,
+		common_address: u16,
+		ioa: u32,
+		value: Dpi,
+		timestamp: Option<Cp56Time2a>,
+		select_execute: Option<SelectExecute>,
+		qu: Option<Qu>,
+	) -> Result<(), ClientError> {
+		let dco = Dco {
+			se: select_execute.unwrap_or(SelectExecute::Execute),
+			qu: qu.unwrap_or(Qu::Unspecified),
+			dcs: value,
+		};
+		let (type_id, information_objects) = match timestamp {
+			Some(timestamp) => (
+				TypeId::C_DC_TA_1,
+				InformationObjects::CdcTa1(vec![GenericObject {
+					address: ioa,
+					object: CdcTa1 { dco, time: timestamp },
+				}]),
+			),
+			None => (
+				TypeId::C_DC_NA_1,
+				InformationObjects::CdcNa1(vec![GenericObject {
+					address: ioa,
+					object: CdcNa1 { dco },
+				}]),
+			),
+		};
+
+		self.send_asdu(Asdu {
+			type_id,
+			information_objects,
+			originator_address: 0,
+			address_field: common_address,
+			sequence: false,
+			test: false,
+			cot: Cot::Request,
+			positive: false,
+		})
+		.await
+	}
+
+	pub async fn send_command_rc(
+		&self,
+		common_address: u16,
+		ioa: u32,
+		value: Rcs,
+		timestamp: Option<Cp56Time2a>,
+		select_execute: Option<SelectExecute>,
+		qu: Option<Qu>,
+	) -> Result<(), ClientError> {
+		let rco = Rco {
+			se: select_execute.unwrap_or(SelectExecute::Execute),
+			qu: qu.unwrap_or(Qu::Unspecified),
+			rcs: value,
+		};
+		let (type_id, information_objects) = match timestamp {
+			Some(timestamp) => (
+				TypeId::C_RC_TA_1,
+				InformationObjects::CrcTa1(vec![GenericObject {
+					address: ioa,
+					object: CrcTa1 { rco, time: timestamp },
+				}]),
+			),
+			None => (
+				TypeId::C_RC_NA_1,
+				InformationObjects::CrcNa1(vec![GenericObject {
+					address: ioa,
+					object: CrcNa1 { rco },
+				}]),
+			),
+		};
+
+		self.send_asdu(Asdu {
+			type_id,
+			information_objects,
+			originator_address: 0,
+			address_field: common_address,
+			sequence: false,
+			test: false,
+			cot: Cot::Request,
+			positive: false,
+		})
+		.await
+	}
+
+	pub async fn send_command_bs(
+		&self,
+		common_address: u16,
+		ioa: u32,
+		value: u32,
+		timestamp: Option<Cp56Time2a>,
+	) -> Result<(), ClientError> {
+		let (type_id, information_objects) = match timestamp {
+			Some(timestamp) => (
+				TypeId::C_BO_TA_1,
+				InformationObjects::CBoTa1(vec![GenericObject {
+					address: ioa,
+					object: CBoTa1 { bsi: value, time: timestamp },
+				}]),
+			),
+			None => (
+				TypeId::C_BO_NA_1,
+				InformationObjects::CBoNa1(vec![GenericObject {
+					address: ioa,
+					object: CBoNa1 { bsi: value },
+				}]),
+			),
+		};
+
+		self.send_asdu(Asdu {
+			type_id,
+			information_objects,
+			originator_address: 0,
+			address_field: common_address,
+			sequence: false,
+			test: false,
+			cot: Cot::Request,
+			positive: false,
+		})
+		.await
 	}
 
 	#[instrument(level = "debug")]

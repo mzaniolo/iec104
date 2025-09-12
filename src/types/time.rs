@@ -64,7 +64,7 @@ impl Cp16Time2a {
 }
 
 /// CP56Time2a time type
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct Cp56Time2a {
 	/// Milliseconds (0-59999)
 	pub ms: u16,

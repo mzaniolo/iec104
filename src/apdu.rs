@@ -240,7 +240,7 @@ mod tests {
 	use crate::{
 		cot::Cot,
 		types::{
-			InformationObject,
+			InformationObjects,
 			commands::{Frz, Rqt},
 		},
 		types_id::TypeId,
@@ -284,7 +284,7 @@ mod tests {
 		assert!(!i_frame.asdu.sequence);
 		assert!(!i_frame.asdu.test);
 		assert!(!i_frame.asdu.positive);
-		let InformationObject::MMeNb1(objects) = &i_frame.asdu.information_objects else {
+		let InformationObjects::MMeNb1(objects) = &i_frame.asdu.information_objects else {
 			panic!("Information objects were expected to be a MMeNb1")
 		};
 		assert_eq!(objects.len(), 7);
@@ -371,7 +371,7 @@ mod tests {
 		assert!(!i_frame.asdu.sequence);
 		assert!(!i_frame.asdu.test);
 		assert!(!i_frame.asdu.positive);
-		let InformationObject::CCiNa1(objects) = &i_frame.asdu.information_objects else {
+		let InformationObjects::CCiNa1(objects) = &i_frame.asdu.information_objects else {
 			panic!("Information objects were expected to be a CCiNa1")
 		};
 		assert_eq!(objects.len(), 1);

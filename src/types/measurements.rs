@@ -31,7 +31,7 @@ impl ToBytes for MSpNa1 {
 }
 
 /// Single-point with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MSpTa1 {
 	/// Single-point with quality descriptor
 	pub siq: Siq,
@@ -83,7 +83,7 @@ impl ToBytes for MDpNa1 {
 }
 
 /// Double point information with CP24Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MDpTa1 {
 	/// Double point information with quality descriptor
 	pub diq: Diq,
@@ -136,7 +136,7 @@ impl ToBytes for MStNa1 {
 }
 
 /// Step position information with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MStTa1 {
 	/// Value with transient state indication
 	pub vti: Vti,
@@ -220,7 +220,7 @@ impl ToBytes for MMeNa1 {
 }
 
 /// Measured value, normalized value with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTa1 {
 	/// Normalized value
 	pub nva: u16,
@@ -281,7 +281,7 @@ impl ToBytes for MMeNb1 {
 }
 
 /// Measured value, scaled value with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTb1 {
 	/// Scaled value
 	pub sva: u16,
@@ -342,7 +342,7 @@ impl ToBytes for MMeNc1 {
 }
 
 /// Measured value, short floating point number with time tag
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct MMeTc1 {
 	/// Short floating point
 	pub value: f32,
@@ -403,7 +403,7 @@ impl ToBytes for MItNa1 {
 }
 
 /// Event of protection equipment with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTa1 {
 	/// Single event of protection equipment
 	pub sep: Sep,
@@ -440,7 +440,7 @@ impl ToBytes for MEpTa1 {
 }
 
 /// Packed start events of protection equipment with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTb1 {
 	/// Start events of protection equipment
 	pub start_ep: StartEp,
@@ -481,7 +481,7 @@ impl ToBytes for MEpTb1 {
 }
 
 /// Packed output circuit information of protection equipment with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTc1 {
 	/// Output circuit information
 	pub oci: Oci,
@@ -572,7 +572,7 @@ impl ToBytes for MMeNd1 {
 }
 
 /// Single-point information with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MSpTb1 {
 	/// Single-point with quality descriptor
 	pub siq: Siq,
@@ -602,7 +602,7 @@ impl ToBytes for MSpTb1 {
 }
 
 /// Double-point information with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MDpTb1 {
 	/// Double point information with quality descriptor
 	pub diq: Diq,
@@ -631,7 +631,7 @@ impl ToBytes for MDpTb1 {
 	}
 }
 /// Step position information with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MStTb1 {
 	/// Value with transient state indication
 	pub vti: Vti,
@@ -661,7 +661,7 @@ impl ToBytes for MStTb1 {
 }
 
 /// Bitstring of 32 bit with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MBoTb1 {
 	/// Bit string of 32 bits
 	pub bsi: u32,
@@ -695,7 +695,7 @@ impl ToBytes for MBoTb1 {
 }
 
 /// Measured value, normalized value with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTd1 {
 	/// Normalized value
 	pub nva: u16,
@@ -729,7 +729,7 @@ impl ToBytes for MMeTd1 {
 }
 
 /// Measured value, scaled value with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTe1 {
 	/// Scaled value
 	pub sva: u16,
@@ -763,7 +763,7 @@ impl ToBytes for MMeTe1 {
 }
 
 /// Measured value, short floating point number with CP56Time2a time tag
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct MMeTf1 {
 	/// Short floating point
 	pub value: f32,
@@ -796,7 +796,7 @@ impl ToBytes for MMeTf1 {
 	}
 }
 /// Integrated totals with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MItTb1 {
 	/// Binary counter reading
 	pub bcr: u32,
@@ -830,7 +830,7 @@ impl ToBytes for MItTb1 {
 }
 
 /// Event of protection equipment with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTd1 {
 	/// Single event of protection equipment
 	pub sep: Sep,
@@ -867,7 +867,7 @@ impl ToBytes for MEpTd1 {
 }
 
 /// Packed start events of protection equipment with CP56Time2a time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTe1 {
 	/// Start events of protection equipment
 	pub start_ep: StartEp,
@@ -909,7 +909,7 @@ impl ToBytes for MEpTe1 {
 
 /// Packed output circuit information of protection equipment with CP56Time2a
 /// time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MEpTf1 {
 	/// Output circuit information
 	pub oci: Oci,

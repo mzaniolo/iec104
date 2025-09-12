@@ -4,7 +4,7 @@ use tracing::instrument;
 use crate::{
 	cot::{Cot, CotError},
 	error::SpanTraceWrapper,
-	types::{InformationObject, ParseError},
+	types::{InformationObjects, ParseError},
 	types_id::TypeId,
 };
 
@@ -17,7 +17,7 @@ pub struct Asdu {
 	pub sequence: bool,
 	pub test: bool,
 	pub positive: bool,
-	pub information_objects: InformationObject,
+	pub information_objects: InformationObjects,
 }
 
 impl Asdu {
@@ -74,7 +74,7 @@ impl Asdu {
 		}
 
 		let information_objects =
-			InformationObject::from_bytes(type_id, sequence, num_objs, remaining_bytes)
+			InformationObjects::from_bytes(type_id, sequence, num_objs, remaining_bytes)
 				.context(InvalidInformationObject)?;
 
 		Ok(Self {

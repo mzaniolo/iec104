@@ -560,7 +560,7 @@ impl ToBytes for CBoNa1 {
 }
 
 /// Single command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CScTa1 {
 	/// Single command
 	pub sco: Sco,
@@ -590,7 +590,7 @@ impl ToBytes for CScTa1 {
 }
 
 /// Double command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CdcTa1 {
 	/// Double command
 	pub dco: Dco,
@@ -620,7 +620,7 @@ impl ToBytes for CdcTa1 {
 }
 
 /// Regulating step command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CrcTa1 {
 	/// Regulating step command
 	pub rco: Rco,
@@ -650,7 +650,7 @@ impl ToBytes for CrcTa1 {
 }
 
 /// Measured value, normalized value command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeTa1 {
 	/// Normalized value
 	pub nva: u16,
@@ -684,7 +684,7 @@ impl ToBytes for CSeTa1 {
 }
 
 /// Measured value, scaled value command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeTb1 {
 	/// Scaled value
 	pub sva: u16,
@@ -718,7 +718,7 @@ impl ToBytes for CSeTb1 {
 }
 
 /// Measured value, short floating point number command with time tag
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct CSeTc1 {
 	/// Short floating point
 	pub value: f32,
@@ -752,7 +752,7 @@ impl ToBytes for CSeTc1 {
 }
 
 /// Bitstring of 32 bit command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CBoTa1 {
 	/// Bit string of 32 bits
 	pub bsi: u32,
@@ -854,7 +854,7 @@ impl ToBytes for CRdNa1 {
 }
 
 /// Clock synchronization command
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CCsNa1 {
 	/// Time tag
 	pub time: Cp56Time2a,
@@ -948,7 +948,7 @@ impl ToBytes for CCdNa1 {
 }
 
 /// Test command with time tag
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CTsTa1 {
 	/// Test value
 	pub tsc: u16,

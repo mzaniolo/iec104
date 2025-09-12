@@ -9,7 +9,7 @@ use iec104::{
 	config::ClientConfig,
 	cot::Cot,
 	types::{
-		CdcNa1, GenericObject, InformationObject,
+		CdcNa1, GenericObject, InformationObjects,
 		commands::{Dco, Qu},
 		information_elements::{Dpi, SelectExecute},
 	},
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Whatever> {
 		sequence: false,
 		test: false,
 		positive: false,
-		information_objects: InformationObject::CdcNa1(vec![GenericObject {
+		information_objects: InformationObjects::CdcNa1(vec![GenericObject {
 			address: 13,
 			object: CdcNa1 {
 				dco: Dco { se: SelectExecute::Select, qu: Qu::Persistent, dcs: Dpi::On },

@@ -62,14 +62,14 @@ pub trait ToBytes {
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct GenericObject<T: FromBytes + ToBytes> {
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GenericObject<T: FromBytes + ToBytes + Default> {
 	pub address: u32,
 	pub object: T,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum InformationObject {
+pub enum InformationObjects {
 	MSpNa1(Vec<GenericObject<MSpNa1>>),
 	MSpTa1(Vec<GenericObject<MSpTa1>>),
 	MDpNa1(Vec<GenericObject<MDpNa1>>),
@@ -129,9 +129,9 @@ pub enum InformationObject {
 	PAcNa1(Vec<GenericObject<PAcNa1>>),
 }
 
-impl InformationObject {
+impl InformationObjects {
 	#[instrument]
-	fn build_objects<T: FromBytes + ToBytes>(
+	fn build_objects<T: FromBytes + ToBytes + Default>(
 		type_id: TypeId,
 		sequence: bool,
 		num_objs: u8,
@@ -191,7 +191,7 @@ impl InformationObject {
 	}
 
 	#[instrument(skip_all)]
-	fn serialize_objects<T: FromBytes + ToBytes>(
+	fn serialize_objects<T: FromBytes + ToBytes + Default>(
 		objects: &[GenericObject<T>],
 		buffer: &mut Vec<u8>,
 	) -> Result<(), ParseError> {
@@ -216,175 +216,175 @@ impl InformationObject {
 		bytes: &[u8],
 	) -> Result<Self, ParseError> {
 		Ok(match type_id {
-			TypeId::M_SP_NA_1 => InformationObject::MSpNa1(Self::build_objects::<MSpNa1>(
+			TypeId::M_SP_NA_1 => InformationObjects::MSpNa1(Self::build_objects::<MSpNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_SP_TA_1 => InformationObject::MSpTa1(Self::build_objects::<MSpTa1>(
+			TypeId::M_SP_TA_1 => InformationObjects::MSpTa1(Self::build_objects::<MSpTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_DP_NA_1 => InformationObject::MDpNa1(Self::build_objects::<MDpNa1>(
+			TypeId::M_DP_NA_1 => InformationObjects::MDpNa1(Self::build_objects::<MDpNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_DP_TA_1 => InformationObject::MDpTa1(Self::build_objects::<MDpTa1>(
+			TypeId::M_DP_TA_1 => InformationObjects::MDpTa1(Self::build_objects::<MDpTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ST_NA_1 => InformationObject::MStNa1(Self::build_objects::<MStNa1>(
+			TypeId::M_ST_NA_1 => InformationObjects::MStNa1(Self::build_objects::<MStNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ST_TA_1 => InformationObject::MStTa1(Self::build_objects::<MStTa1>(
+			TypeId::M_ST_TA_1 => InformationObjects::MStTa1(Self::build_objects::<MStTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_BO_NA_1 => InformationObject::MBoNa1(Self::build_objects::<MBoNa1>(
+			TypeId::M_BO_NA_1 => InformationObjects::MBoNa1(Self::build_objects::<MBoNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_NA_1 => InformationObject::MMeNa1(Self::build_objects::<MMeNa1>(
+			TypeId::M_ME_NA_1 => InformationObjects::MMeNa1(Self::build_objects::<MMeNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TA_1 => InformationObject::MMeTa1(Self::build_objects::<MMeTa1>(
+			TypeId::M_ME_TA_1 => InformationObjects::MMeTa1(Self::build_objects::<MMeTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_NB_1 => InformationObject::MMeNb1(Self::build_objects::<MMeNb1>(
+			TypeId::M_ME_NB_1 => InformationObjects::MMeNb1(Self::build_objects::<MMeNb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TB_1 => InformationObject::MMeTb1(Self::build_objects::<MMeTb1>(
+			TypeId::M_ME_TB_1 => InformationObjects::MMeTb1(Self::build_objects::<MMeTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_NC_1 => InformationObject::MMeNc1(Self::build_objects::<MMeNc1>(
+			TypeId::M_ME_NC_1 => InformationObjects::MMeNc1(Self::build_objects::<MMeNc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TC_1 => InformationObject::MMeTc1(Self::build_objects::<MMeTc1>(
+			TypeId::M_ME_TC_1 => InformationObjects::MMeTc1(Self::build_objects::<MMeTc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_IT_NA_1 => InformationObject::MItNa1(Self::build_objects::<MItNa1>(
+			TypeId::M_IT_NA_1 => InformationObjects::MItNa1(Self::build_objects::<MItNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TA_1 => InformationObject::MEpTa1(Self::build_objects::<MEpTa1>(
+			TypeId::M_EP_TA_1 => InformationObjects::MEpTa1(Self::build_objects::<MEpTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TB_1 => InformationObject::MEpTb1(Self::build_objects::<MEpTb1>(
+			TypeId::M_EP_TB_1 => InformationObjects::MEpTb1(Self::build_objects::<MEpTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TC_1 => InformationObject::MEpTc1(Self::build_objects::<MEpTc1>(
+			TypeId::M_EP_TC_1 => InformationObjects::MEpTc1(Self::build_objects::<MEpTc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_PS_NA_1 => InformationObject::MPsNa1(Self::build_objects::<MPsNa1>(
+			TypeId::M_PS_NA_1 => InformationObjects::MPsNa1(Self::build_objects::<MPsNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_ND_1 => InformationObject::MMeNd1(Self::build_objects::<MMeNd1>(
+			TypeId::M_ME_ND_1 => InformationObjects::MMeNd1(Self::build_objects::<MMeNd1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_SP_TB_1 => InformationObject::MSpTb1(Self::build_objects::<MSpTb1>(
+			TypeId::M_SP_TB_1 => InformationObjects::MSpTb1(Self::build_objects::<MSpTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_DP_TB_1 => InformationObject::MDpTb1(Self::build_objects::<MDpTb1>(
+			TypeId::M_DP_TB_1 => InformationObjects::MDpTb1(Self::build_objects::<MDpTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ST_TB_1 => InformationObject::MStTb1(Self::build_objects::<MStTb1>(
+			TypeId::M_ST_TB_1 => InformationObjects::MStTb1(Self::build_objects::<MStTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_BO_TB_1 => InformationObject::MBoTb1(Self::build_objects::<MBoTb1>(
+			TypeId::M_BO_TB_1 => InformationObjects::MBoTb1(Self::build_objects::<MBoTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TD_1 => InformationObject::MMeTd1(Self::build_objects::<MMeTd1>(
+			TypeId::M_ME_TD_1 => InformationObjects::MMeTd1(Self::build_objects::<MMeTd1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TE_1 => InformationObject::MMeTe1(Self::build_objects::<MMeTe1>(
+			TypeId::M_ME_TE_1 => InformationObjects::MMeTe1(Self::build_objects::<MMeTe1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_ME_TF_1 => InformationObject::MMeTf1(Self::build_objects::<MMeTf1>(
+			TypeId::M_ME_TF_1 => InformationObjects::MMeTf1(Self::build_objects::<MMeTf1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_IT_TB_1 => InformationObject::MItTb1(Self::build_objects::<MItTb1>(
+			TypeId::M_IT_TB_1 => InformationObjects::MItTb1(Self::build_objects::<MItTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TD_1 => InformationObject::MEpTd1(Self::build_objects::<MEpTd1>(
+			TypeId::M_EP_TD_1 => InformationObjects::MEpTd1(Self::build_objects::<MEpTd1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TE_1 => InformationObject::MEpTe1(Self::build_objects::<MEpTe1>(
+			TypeId::M_EP_TE_1 => InformationObjects::MEpTe1(Self::build_objects::<MEpTe1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EP_TF_1 => InformationObject::MEpTf1(Self::build_objects::<MEpTf1>(
+			TypeId::M_EP_TF_1 => InformationObjects::MEpTf1(Self::build_objects::<MEpTf1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::M_EI_NA_1 => InformationObject::MEiNa1(Self::build_objects::<MEiNa1>(
+			TypeId::M_EI_NA_1 => InformationObjects::MEiNa1(Self::build_objects::<MEiNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SC_NA_1 => InformationObject::CScNa1(Self::build_objects::<CScNa1>(
+			TypeId::C_SC_NA_1 => InformationObjects::CScNa1(Self::build_objects::<CScNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_DC_NA_1 => InformationObject::CdcNa1(Self::build_objects::<CdcNa1>(
+			TypeId::C_DC_NA_1 => InformationObjects::CdcNa1(Self::build_objects::<CdcNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_RC_NA_1 => InformationObject::CrcNa1(Self::build_objects::<CrcNa1>(
+			TypeId::C_RC_NA_1 => InformationObjects::CrcNa1(Self::build_objects::<CrcNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_NA_1 => InformationObject::CSeNa1(Self::build_objects::<CSeNa1>(
+			TypeId::C_SE_NA_1 => InformationObjects::CSeNa1(Self::build_objects::<CSeNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_NB_1 => InformationObject::CSeNb1(Self::build_objects::<CSeNb1>(
+			TypeId::C_SE_NB_1 => InformationObjects::CSeNb1(Self::build_objects::<CSeNb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_NC_1 => InformationObject::CSeNc1(Self::build_objects::<CSeNc1>(
+			TypeId::C_SE_NC_1 => InformationObjects::CSeNc1(Self::build_objects::<CSeNc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_BO_NA_1 => InformationObject::CBoNa1(Self::build_objects::<CBoNa1>(
+			TypeId::C_BO_NA_1 => InformationObjects::CBoNa1(Self::build_objects::<CBoNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SC_TA_1 => InformationObject::CScTa1(Self::build_objects::<CScTa1>(
+			TypeId::C_SC_TA_1 => InformationObjects::CScTa1(Self::build_objects::<CScTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_DC_TA_1 => InformationObject::CdcTa1(Self::build_objects::<CdcTa1>(
+			TypeId::C_DC_TA_1 => InformationObjects::CdcTa1(Self::build_objects::<CdcTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_RC_TA_1 => InformationObject::CrcTa1(Self::build_objects::<CrcTa1>(
+			TypeId::C_RC_TA_1 => InformationObjects::CrcTa1(Self::build_objects::<CrcTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_TA_1 => InformationObject::CSeTa1(Self::build_objects::<CSeTa1>(
+			TypeId::C_SE_TA_1 => InformationObjects::CSeTa1(Self::build_objects::<CSeTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_TB_1 => InformationObject::CSeTb1(Self::build_objects::<CSeTb1>(
+			TypeId::C_SE_TB_1 => InformationObjects::CSeTb1(Self::build_objects::<CSeTb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_SE_TC_1 => InformationObject::CSeTc1(Self::build_objects::<CSeTc1>(
+			TypeId::C_SE_TC_1 => InformationObjects::CSeTc1(Self::build_objects::<CSeTc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_BO_TA_1 => InformationObject::CBoTa1(Self::build_objects::<CBoTa1>(
+			TypeId::C_BO_TA_1 => InformationObjects::CBoTa1(Self::build_objects::<CBoTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_IC_NA_1 => InformationObject::CIcNa1(Self::build_objects::<CIcNa1>(
+			TypeId::C_IC_NA_1 => InformationObjects::CIcNa1(Self::build_objects::<CIcNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_CI_NA_1 => InformationObject::CCiNa1(Self::build_objects::<CCiNa1>(
+			TypeId::C_CI_NA_1 => InformationObjects::CCiNa1(Self::build_objects::<CCiNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_RD_NA_1 => InformationObject::CRdNa1(Self::build_objects::<CRdNa1>(
+			TypeId::C_RD_NA_1 => InformationObjects::CRdNa1(Self::build_objects::<CRdNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_CS_NA_1 => InformationObject::CCsNa1(Self::build_objects::<CCsNa1>(
+			TypeId::C_CS_NA_1 => InformationObjects::CCsNa1(Self::build_objects::<CCsNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_TS_NA_1 => InformationObject::CTsNa1(Self::build_objects::<CTsNa1>(
+			TypeId::C_TS_NA_1 => InformationObjects::CTsNa1(Self::build_objects::<CTsNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_RP_NA_1 => InformationObject::CRpNa1(Self::build_objects::<CRpNa1>(
+			TypeId::C_RP_NA_1 => InformationObjects::CRpNa1(Self::build_objects::<CRpNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_CD_NA_1 => InformationObject::CCdNa1(Self::build_objects::<CCdNa1>(
+			TypeId::C_CD_NA_1 => InformationObjects::CCdNa1(Self::build_objects::<CCdNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::C_TS_TA_1 => InformationObject::CTsTa1(Self::build_objects::<CTsTa1>(
+			TypeId::C_TS_TA_1 => InformationObjects::CTsTa1(Self::build_objects::<CTsTa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::P_ME_NA_1 => InformationObject::PMeNa1(Self::build_objects::<PMeNa1>(
+			TypeId::P_ME_NA_1 => InformationObjects::PMeNa1(Self::build_objects::<PMeNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::P_ME_NB_1 => InformationObject::PMeNb1(Self::build_objects::<PMeNb1>(
+			TypeId::P_ME_NB_1 => InformationObjects::PMeNb1(Self::build_objects::<PMeNb1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::P_ME_NC_1 => InformationObject::PMeNc1(Self::build_objects::<PMeNc1>(
+			TypeId::P_ME_NC_1 => InformationObjects::PMeNc1(Self::build_objects::<PMeNc1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
-			TypeId::P_AC_NA_1 => InformationObject::PAcNa1(Self::build_objects::<PAcNa1>(
+			TypeId::P_AC_NA_1 => InformationObjects::PAcNa1(Self::build_objects::<PAcNa1>(
 				type_id, sequence, num_objs, bytes,
 			)?),
 			TypeId::F_FR_NA_1
@@ -401,188 +401,188 @@ impl InformationObject {
 	#[must_use]
 	pub const fn len(&self) -> usize {
 		match self {
-			InformationObject::MSpNa1(objs) => objs.len(),
-			InformationObject::MSpTa1(objs) => objs.len(),
-			InformationObject::MDpNa1(objs) => objs.len(),
-			InformationObject::MDpTa1(objs) => objs.len(),
-			InformationObject::MStNa1(objs) => objs.len(),
-			InformationObject::MStTa1(objs) => objs.len(),
-			InformationObject::MBoNa1(objs) => objs.len(),
-			InformationObject::MMeNa1(objs) => objs.len(),
-			InformationObject::MMeTa1(objs) => objs.len(),
-			InformationObject::MMeNb1(objs) => objs.len(),
-			InformationObject::MMeTb1(objs) => objs.len(),
-			InformationObject::MMeNc1(objs) => objs.len(),
-			InformationObject::MMeTc1(objs) => objs.len(),
-			InformationObject::MItNa1(objs) => objs.len(),
-			InformationObject::MEpTa1(objs) => objs.len(),
-			InformationObject::MEpTb1(objs) => objs.len(),
-			InformationObject::MEpTc1(objs) => objs.len(),
-			InformationObject::MPsNa1(objs) => objs.len(),
-			InformationObject::MMeNd1(objs) => objs.len(),
-			InformationObject::MSpTb1(objs) => objs.len(),
-			InformationObject::MDpTb1(objs) => objs.len(),
-			InformationObject::MStTb1(objs) => objs.len(),
-			InformationObject::MBoTb1(objs) => objs.len(),
-			InformationObject::MMeTd1(objs) => objs.len(),
-			InformationObject::MMeTe1(objs) => objs.len(),
-			InformationObject::MMeTf1(objs) => objs.len(),
-			InformationObject::MItTb1(objs) => objs.len(),
-			InformationObject::MEpTd1(objs) => objs.len(),
-			InformationObject::MEpTe1(objs) => objs.len(),
-			InformationObject::MEpTf1(objs) => objs.len(),
-			InformationObject::MEiNa1(objs) => objs.len(),
-			InformationObject::CScNa1(objs) => objs.len(),
-			InformationObject::CdcNa1(objs) => objs.len(),
-			InformationObject::CrcNa1(objs) => objs.len(),
-			InformationObject::CSeNa1(objs) => objs.len(),
-			InformationObject::CSeNb1(objs) => objs.len(),
-			InformationObject::CSeNc1(objs) => objs.len(),
-			InformationObject::CBoNa1(objs) => objs.len(),
-			InformationObject::CScTa1(objs) => objs.len(),
-			InformationObject::CdcTa1(objs) => objs.len(),
-			InformationObject::CrcTa1(objs) => objs.len(),
-			InformationObject::CSeTa1(objs) => objs.len(),
-			InformationObject::CSeTb1(objs) => objs.len(),
-			InformationObject::CSeTc1(objs) => objs.len(),
-			InformationObject::CBoTa1(objs) => objs.len(),
-			InformationObject::CIcNa1(objs) => objs.len(),
-			InformationObject::CCiNa1(objs) => objs.len(),
-			InformationObject::CRdNa1(objs) => objs.len(),
-			InformationObject::CCsNa1(objs) => objs.len(),
-			InformationObject::CTsNa1(objs) => objs.len(),
-			InformationObject::CRpNa1(objs) => objs.len(),
-			InformationObject::CCdNa1(objs) => objs.len(),
-			InformationObject::CTsTa1(objs) => objs.len(),
-			InformationObject::PMeNa1(objs) => objs.len(),
-			InformationObject::PMeNb1(objs) => objs.len(),
-			InformationObject::PMeNc1(objs) => objs.len(),
-			InformationObject::PAcNa1(objs) => objs.len(),
+			InformationObjects::MSpNa1(objs) => objs.len(),
+			InformationObjects::MSpTa1(objs) => objs.len(),
+			InformationObjects::MDpNa1(objs) => objs.len(),
+			InformationObjects::MDpTa1(objs) => objs.len(),
+			InformationObjects::MStNa1(objs) => objs.len(),
+			InformationObjects::MStTa1(objs) => objs.len(),
+			InformationObjects::MBoNa1(objs) => objs.len(),
+			InformationObjects::MMeNa1(objs) => objs.len(),
+			InformationObjects::MMeTa1(objs) => objs.len(),
+			InformationObjects::MMeNb1(objs) => objs.len(),
+			InformationObjects::MMeTb1(objs) => objs.len(),
+			InformationObjects::MMeNc1(objs) => objs.len(),
+			InformationObjects::MMeTc1(objs) => objs.len(),
+			InformationObjects::MItNa1(objs) => objs.len(),
+			InformationObjects::MEpTa1(objs) => objs.len(),
+			InformationObjects::MEpTb1(objs) => objs.len(),
+			InformationObjects::MEpTc1(objs) => objs.len(),
+			InformationObjects::MPsNa1(objs) => objs.len(),
+			InformationObjects::MMeNd1(objs) => objs.len(),
+			InformationObjects::MSpTb1(objs) => objs.len(),
+			InformationObjects::MDpTb1(objs) => objs.len(),
+			InformationObjects::MStTb1(objs) => objs.len(),
+			InformationObjects::MBoTb1(objs) => objs.len(),
+			InformationObjects::MMeTd1(objs) => objs.len(),
+			InformationObjects::MMeTe1(objs) => objs.len(),
+			InformationObjects::MMeTf1(objs) => objs.len(),
+			InformationObjects::MItTb1(objs) => objs.len(),
+			InformationObjects::MEpTd1(objs) => objs.len(),
+			InformationObjects::MEpTe1(objs) => objs.len(),
+			InformationObjects::MEpTf1(objs) => objs.len(),
+			InformationObjects::MEiNa1(objs) => objs.len(),
+			InformationObjects::CScNa1(objs) => objs.len(),
+			InformationObjects::CdcNa1(objs) => objs.len(),
+			InformationObjects::CrcNa1(objs) => objs.len(),
+			InformationObjects::CSeNa1(objs) => objs.len(),
+			InformationObjects::CSeNb1(objs) => objs.len(),
+			InformationObjects::CSeNc1(objs) => objs.len(),
+			InformationObjects::CBoNa1(objs) => objs.len(),
+			InformationObjects::CScTa1(objs) => objs.len(),
+			InformationObjects::CdcTa1(objs) => objs.len(),
+			InformationObjects::CrcTa1(objs) => objs.len(),
+			InformationObjects::CSeTa1(objs) => objs.len(),
+			InformationObjects::CSeTb1(objs) => objs.len(),
+			InformationObjects::CSeTc1(objs) => objs.len(),
+			InformationObjects::CBoTa1(objs) => objs.len(),
+			InformationObjects::CIcNa1(objs) => objs.len(),
+			InformationObjects::CCiNa1(objs) => objs.len(),
+			InformationObjects::CRdNa1(objs) => objs.len(),
+			InformationObjects::CCsNa1(objs) => objs.len(),
+			InformationObjects::CTsNa1(objs) => objs.len(),
+			InformationObjects::CRpNa1(objs) => objs.len(),
+			InformationObjects::CCdNa1(objs) => objs.len(),
+			InformationObjects::CTsTa1(objs) => objs.len(),
+			InformationObjects::PMeNa1(objs) => objs.len(),
+			InformationObjects::PMeNb1(objs) => objs.len(),
+			InformationObjects::PMeNc1(objs) => objs.len(),
+			InformationObjects::PAcNa1(objs) => objs.len(),
 		}
 	}
 
 	#[must_use]
 	pub const fn is_empty(&self) -> bool {
 		match self {
-			InformationObject::MSpNa1(objs) => objs.is_empty(),
-			InformationObject::MSpTa1(objs) => objs.is_empty(),
-			InformationObject::MDpNa1(objs) => objs.is_empty(),
-			InformationObject::MDpTa1(objs) => objs.is_empty(),
-			InformationObject::MStNa1(objs) => objs.is_empty(),
-			InformationObject::MStTa1(objs) => objs.is_empty(),
-			InformationObject::MBoNa1(objs) => objs.is_empty(),
-			InformationObject::MMeNa1(objs) => objs.is_empty(),
-			InformationObject::MMeTa1(objs) => objs.is_empty(),
-			InformationObject::MMeNb1(objs) => objs.is_empty(),
-			InformationObject::MMeTb1(objs) => objs.is_empty(),
-			InformationObject::MMeNc1(objs) => objs.is_empty(),
-			InformationObject::MMeTc1(objs) => objs.is_empty(),
-			InformationObject::MItNa1(objs) => objs.is_empty(),
-			InformationObject::MEpTa1(objs) => objs.is_empty(),
-			InformationObject::MEpTb1(objs) => objs.is_empty(),
-			InformationObject::MEpTc1(objs) => objs.is_empty(),
-			InformationObject::MPsNa1(objs) => objs.is_empty(),
-			InformationObject::MMeNd1(objs) => objs.is_empty(),
-			InformationObject::MSpTb1(objs) => objs.is_empty(),
-			InformationObject::MDpTb1(objs) => objs.is_empty(),
-			InformationObject::MStTb1(objs) => objs.is_empty(),
-			InformationObject::MBoTb1(objs) => objs.is_empty(),
-			InformationObject::MMeTd1(objs) => objs.is_empty(),
-			InformationObject::MMeTe1(objs) => objs.is_empty(),
-			InformationObject::MMeTf1(objs) => objs.is_empty(),
-			InformationObject::MItTb1(objs) => objs.is_empty(),
-			InformationObject::MEpTd1(objs) => objs.is_empty(),
-			InformationObject::MEpTe1(objs) => objs.is_empty(),
-			InformationObject::MEpTf1(objs) => objs.is_empty(),
-			InformationObject::MEiNa1(objs) => objs.is_empty(),
-			InformationObject::CScNa1(objs) => objs.is_empty(),
-			InformationObject::CdcNa1(objs) => objs.is_empty(),
-			InformationObject::CrcNa1(objs) => objs.is_empty(),
-			InformationObject::CSeNa1(objs) => objs.is_empty(),
-			InformationObject::CSeNb1(objs) => objs.is_empty(),
-			InformationObject::CSeNc1(objs) => objs.is_empty(),
-			InformationObject::CBoNa1(objs) => objs.is_empty(),
-			InformationObject::CScTa1(objs) => objs.is_empty(),
-			InformationObject::CdcTa1(objs) => objs.is_empty(),
-			InformationObject::CrcTa1(objs) => objs.is_empty(),
-			InformationObject::CSeTa1(objs) => objs.is_empty(),
-			InformationObject::CSeTb1(objs) => objs.is_empty(),
-			InformationObject::CSeTc1(objs) => objs.is_empty(),
-			InformationObject::CBoTa1(objs) => objs.is_empty(),
-			InformationObject::CIcNa1(objs) => objs.is_empty(),
-			InformationObject::CCiNa1(objs) => objs.is_empty(),
-			InformationObject::CRdNa1(objs) => objs.is_empty(),
-			InformationObject::CCsNa1(objs) => objs.is_empty(),
-			InformationObject::CTsNa1(objs) => objs.is_empty(),
-			InformationObject::CRpNa1(objs) => objs.is_empty(),
-			InformationObject::CCdNa1(objs) => objs.is_empty(),
-			InformationObject::CTsTa1(objs) => objs.is_empty(),
-			InformationObject::PMeNa1(objs) => objs.is_empty(),
-			InformationObject::PMeNb1(objs) => objs.is_empty(),
-			InformationObject::PMeNc1(objs) => objs.is_empty(),
-			InformationObject::PAcNa1(objs) => objs.is_empty(),
+			InformationObjects::MSpNa1(objs) => objs.is_empty(),
+			InformationObjects::MSpTa1(objs) => objs.is_empty(),
+			InformationObjects::MDpNa1(objs) => objs.is_empty(),
+			InformationObjects::MDpTa1(objs) => objs.is_empty(),
+			InformationObjects::MStNa1(objs) => objs.is_empty(),
+			InformationObjects::MStTa1(objs) => objs.is_empty(),
+			InformationObjects::MBoNa1(objs) => objs.is_empty(),
+			InformationObjects::MMeNa1(objs) => objs.is_empty(),
+			InformationObjects::MMeTa1(objs) => objs.is_empty(),
+			InformationObjects::MMeNb1(objs) => objs.is_empty(),
+			InformationObjects::MMeTb1(objs) => objs.is_empty(),
+			InformationObjects::MMeNc1(objs) => objs.is_empty(),
+			InformationObjects::MMeTc1(objs) => objs.is_empty(),
+			InformationObjects::MItNa1(objs) => objs.is_empty(),
+			InformationObjects::MEpTa1(objs) => objs.is_empty(),
+			InformationObjects::MEpTb1(objs) => objs.is_empty(),
+			InformationObjects::MEpTc1(objs) => objs.is_empty(),
+			InformationObjects::MPsNa1(objs) => objs.is_empty(),
+			InformationObjects::MMeNd1(objs) => objs.is_empty(),
+			InformationObjects::MSpTb1(objs) => objs.is_empty(),
+			InformationObjects::MDpTb1(objs) => objs.is_empty(),
+			InformationObjects::MStTb1(objs) => objs.is_empty(),
+			InformationObjects::MBoTb1(objs) => objs.is_empty(),
+			InformationObjects::MMeTd1(objs) => objs.is_empty(),
+			InformationObjects::MMeTe1(objs) => objs.is_empty(),
+			InformationObjects::MMeTf1(objs) => objs.is_empty(),
+			InformationObjects::MItTb1(objs) => objs.is_empty(),
+			InformationObjects::MEpTd1(objs) => objs.is_empty(),
+			InformationObjects::MEpTe1(objs) => objs.is_empty(),
+			InformationObjects::MEpTf1(objs) => objs.is_empty(),
+			InformationObjects::MEiNa1(objs) => objs.is_empty(),
+			InformationObjects::CScNa1(objs) => objs.is_empty(),
+			InformationObjects::CdcNa1(objs) => objs.is_empty(),
+			InformationObjects::CrcNa1(objs) => objs.is_empty(),
+			InformationObjects::CSeNa1(objs) => objs.is_empty(),
+			InformationObjects::CSeNb1(objs) => objs.is_empty(),
+			InformationObjects::CSeNc1(objs) => objs.is_empty(),
+			InformationObjects::CBoNa1(objs) => objs.is_empty(),
+			InformationObjects::CScTa1(objs) => objs.is_empty(),
+			InformationObjects::CdcTa1(objs) => objs.is_empty(),
+			InformationObjects::CrcTa1(objs) => objs.is_empty(),
+			InformationObjects::CSeTa1(objs) => objs.is_empty(),
+			InformationObjects::CSeTb1(objs) => objs.is_empty(),
+			InformationObjects::CSeTc1(objs) => objs.is_empty(),
+			InformationObjects::CBoTa1(objs) => objs.is_empty(),
+			InformationObjects::CIcNa1(objs) => objs.is_empty(),
+			InformationObjects::CCiNa1(objs) => objs.is_empty(),
+			InformationObjects::CRdNa1(objs) => objs.is_empty(),
+			InformationObjects::CCsNa1(objs) => objs.is_empty(),
+			InformationObjects::CTsNa1(objs) => objs.is_empty(),
+			InformationObjects::CRpNa1(objs) => objs.is_empty(),
+			InformationObjects::CCdNa1(objs) => objs.is_empty(),
+			InformationObjects::CTsTa1(objs) => objs.is_empty(),
+			InformationObjects::PMeNa1(objs) => objs.is_empty(),
+			InformationObjects::PMeNb1(objs) => objs.is_empty(),
+			InformationObjects::PMeNc1(objs) => objs.is_empty(),
+			InformationObjects::PAcNa1(objs) => objs.is_empty(),
 		}
 	}
 
 	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		match self {
-			InformationObject::MSpNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MSpTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MDpNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MDpTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MStNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MStTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MBoNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeNb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeNc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MItNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MPsNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeNd1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MSpTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MDpTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MStTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MBoTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTd1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTe1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MMeTf1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MItTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTd1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTe1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEpTf1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::MEiNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CScNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CdcNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CrcNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeNb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeNc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CBoNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CScTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CdcTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CrcTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeTb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CSeTc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CBoTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CIcNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CCiNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CRdNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CCsNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CTsNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CRpNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CCdNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::CTsTa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::PMeNa1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::PMeNb1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::PMeNc1(objs) => Self::serialize_objects(objs, buffer),
-			InformationObject::PAcNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MSpNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MSpTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MDpNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MDpTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MStNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MStTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MBoNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeNb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeNc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MItNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MPsNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeNd1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MSpTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MDpTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MStTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MBoTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTd1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTe1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MMeTf1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MItTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTd1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTe1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEpTf1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::MEiNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CScNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CdcNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CrcNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeNb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeNc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CBoNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CScTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CdcTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CrcTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeTb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CSeTc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CBoTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CIcNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CCiNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CRdNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CCsNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CTsNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CRpNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CCdNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::CTsTa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::PMeNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::PMeNb1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::PMeNc1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::PAcNa1(objs) => Self::serialize_objects(objs, buffer),
 		}
 	}
 }
