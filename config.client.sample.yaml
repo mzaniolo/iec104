@@ -1,0 +1,15 @@
+address: 127.0.0.1
+port: 2404
+protocol:
+  t3: 20s
+  t2: 10s
+  t1: 12s
+  t0: 10s
+  k: 12
+  w: 8
+  originator_address: 1
+tls:
+  client_key: client.key
+  client_certificate: client.crt
+  server_certificate: server.crt
+  danger_disable_tls_verify: false
