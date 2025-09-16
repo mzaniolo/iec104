@@ -25,6 +25,19 @@ def on_dp_command(point: c104.Point, previous_info: c104.Information, message: c
 
     return c104.ResponseState.SUCCESS
 
+def on_sp_command(point: c104.Point, previous_info: c104.Information, message: c104.IncomingMessage) -> c104.ResponseState:
+    """ handle incoming regulating step command
+    """
+    print("{0} SP COMMAND on IOA: {1}, message: {2}, previous: {3}, current: {4}".format(point.type, point.io_address, message, previous_info, point.info))
+
+    return c104.ResponseState.SUCCESS
+
+def on_rc_command(point: c104.Point, previous_info: c104.Information, message: c104.IncomingMessage) -> c104.ResponseState:
+    """ handle incoming regulating step command
+    """
+    print("{0} RC COMMAND on IOA: {1}, message: {2}, previous: {3}, current: {4}".format(point.type, point.io_address, message, previous_info, point.info))
+
+    return c104.ResponseState.SUCCESS
 
 def before_auto_transmit(point: c104.Point) -> None:
     """ update point value before transmission
@@ -64,8 +77,14 @@ def main():
     command = station.add_point(io_address=13, type=c104.Type.C_RC_TA_1)
     command.on_receive(callable=on_step_command)
 
-    command = station.add_point(io_address=14, type=c104.Type.C_DC_NA_1)
+    command = station.add_point(io_address=14, type=c104.Type.C_SC_NA_1)
+    command.on_receive(callable=on_sp_command)
+
+    command = station.add_point(io_address=15, type=c104.Type.C_DC_NA_1)
     command.on_receive(callable=on_dp_command)
+
+    command = station.add_point(io_address=16, type=c104.Type.C_RC_NA_1)
+    command.on_receive(callable=on_rc_command)
 
     # start
     server.start()

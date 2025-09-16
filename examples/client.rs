@@ -7,13 +7,10 @@ use iec104::{
 	asdu::Asdu,
 	client::{Client, OnNewObjects, errors::ClientError},
 	config::ClientConfig,
-	cot::Cot,
 	types::{
-		CdcNa1, GenericObject, InformationObjects,
-		commands::{Dco, Qu},
-		information_elements::{Dpi, SelectExecute},
+		commands::Rcs,
+		information_elements::{Dpi, Spi},
 	},
-	types_id::TypeId,
 };
 use snafu::{ResultExt as _, Whatever, whatever};
 use tokio::{
@@ -51,38 +48,18 @@ async fn main() -> Result<(), Whatever> {
 	let restart = tokio::time::sleep(Duration::from_secs(15));
 	tokio::pin!(restart);
 
-	let asdu = Asdu {
-		type_id: TypeId::C_DC_NA_1,
-		cot: Cot::Request,
-		originator_address: 1,
-		address_field: 47,
-		sequence: false,
-		test: false,
-		positive: false,
-		information_objects: InformationObjects::CdcNa1(vec![GenericObject {
-			address: 13,
-			object: CdcNa1 {
-				dco: Dco { se: SelectExecute::Select, qu: Qu::Persistent, dcs: Dpi::On },
-			},
-		}]),
-	};
-
 	loop {
 		tokio::select! {
 			_ = s1.recv() => {tracing::info!("SIGINT"); break;},
 			_ = s2.recv() => {tracing::info!("SIGTERM"); break;},
 			_ = &mut period => {
 				tracing::info!("Period");
-				if let Err(e) = client.send_asdu(asdu.clone()).await {
-					match e {
-						ClientError::NoWriteChannel {..} => {
-							whatever!("There is no channel to send commands");
-						}
-						_ => {
-							tracing::error!("Error sending ASDU: {e}");
-						}
-					}
-				}
+				check_error(client.send_command_rc(47, 13, Rcs::Increment, None, None, None).await)?;
+				check_error(client.send_command_sp(47, 14, Spi::On, None, None, None).await)?;
+				check_error(client.send_command_dp(47, 15, Dpi::On, None, None, None).await)?;
+				check_error(client.send_command_bs(47, 16, 1, None).await)?;
+
+
 				period.as_mut().reset(Instant::now() + Duration::from_secs(1));
 			},
 			_ = &mut stop => {
@@ -110,5 +87,22 @@ struct MyCallback;
 impl OnNewObjects for MyCallback {
 	async fn on_new_objects(&self, _asdu: Asdu) {
 		// tracing::info!("Received objects: {objects:?}");
+	}
+}
+
+/// Check the error to see if it is a critical error
+fn check_error(r: Result<(), ClientError>) -> Result<(), Whatever> {
+	if let Err(e) = r {
+		match e {
+			ClientError::NoWriteChannel { .. } => {
+				whatever!("There is no channel to send commands");
+			}
+			_ => {
+				tracing::error!("Error sending ASDU: {e}");
+				Ok(())
+			}
+		}
+	} else {
+		Ok(())
 	}
 }
