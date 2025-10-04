@@ -35,7 +35,11 @@ async fn main() -> Result<(), Whatever> {
 		.with(ErrorLayer::default().with_filter(EnvFilter::from("debug")))
 		.init();
 
-	let mut link = Link::new(LinkConfig::default(), MyCallback);
+	let mut my_config = LinkConfig::default();
+	my_config.server = true;
+
+	let mut link = Link::new(my_config, MyCallback);
+
 	link.connect().await.whatever_context("Failed to connect")?;
 	link.start_receiving().await.whatever_context("Failed to start receiving")?;
 
@@ -87,12 +91,7 @@ async fn main() -> Result<(), Whatever> {
 			},
 			_ = &mut period => {
 				tracing::info!("Period");
-				check_error(link.send_command_rc(47, 13, Rcs::Increment, None, None, None).await)?;
-				check_error(link.send_command_sp(47, 14, Spi::On, None, None, None).await)?;
-				check_error(link.send_command_dp(47, 15, Dpi::On, None, None, None).await)?;
-				check_error(link.send_command_bs(47, 16, 1, None).await)?;
-
-				period.as_mut().reset(Instant::now() + Duration::from_secs(1));
+				period.as_mut().reset(Instant::now() + Duration::from_secs(10));
 			},
 			_ = &mut stop => {
 				tracing::info!("Stopping");

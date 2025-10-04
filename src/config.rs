@@ -30,7 +30,7 @@ pub struct ProtocolConfig {
 
 /// The client TLS configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TlsClientConfig {
+pub struct TlsConfig {
 	/// Path to the client key; if not specified, it will be assumed
 	/// that the server is configured not to verify client
 	/// certificates.
@@ -55,18 +55,21 @@ pub struct TlsClientConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ClientConfig {
+pub struct LinkConfig {
 	/// The address of the server.
 	pub address: String,
 	/// The port of the server.
 	pub port: u16,
+	/// Server or Client mode.
+	pub server: bool,
 	/// The protocol configuration.
 	#[serde(default)]
 	pub protocol: ProtocolConfig,
 	/// The TLS configuration.
 	#[serde(default)]
-	pub tls: Option<TlsClientConfig>,
+	pub tls: Option<TlsConfig>,
 }
+
 
 impl Default for ProtocolConfig {
 	fn default() -> Self {
@@ -82,11 +85,12 @@ impl Default for ProtocolConfig {
 	}
 }
 
-impl Default for ClientConfig {
+impl Default for LinkConfig {
 	fn default() -> Self {
 		Self {
 			address: "127.0.0.1".to_owned(),
 			port: 2404,
+			server: false,
 			protocol: ProtocolConfig::default(),
 			tls: None,
 		}

@@ -2,7 +2,7 @@
 
 pub mod apdu;
 pub mod asdu;
-pub mod client;
+pub mod link;
 pub mod config;
 pub mod cot;
 pub mod error;
