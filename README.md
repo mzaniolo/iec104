@@ -9,7 +9,7 @@ Contributions are welcome and encourage!
 Run examples :
 ---------------
 // to launch a server :
-cargo run --axample server
+cargo run --example server
 // to launch a client :
 cargo run --example client
   
