@@ -5,14 +5,16 @@ use std::time::Duration;
 use async_trait::async_trait;
 use iec104::{
 	asdu::Asdu,
-	link::{Link, OnNewObjects, errors::LinkError},
+//	link::{Link, OnNewObjects, errors::LinkError},
+	link::{Link, OnNewObjects},
 	config::LinkConfig,
-	types::{
-		commands::Rcs,
-		information_elements::{Dpi, Spi},
-	},
+//	types::{
+//		commands::Rcs,
+//		information_elements::{Dpi, Spi},
+//	},
 };
-use snafu::{ResultExt as _, Whatever, whatever};
+//use snafu::{ResultExt as _, Whatever, whatever};
+use snafu::{ResultExt as _, Whatever};
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
 #[cfg(windows)]
@@ -69,10 +71,10 @@ async fn main() -> Result<(), Whatever> {
 	let period = tokio::time::sleep(Duration::from_secs(1));
 	tokio::pin!(period);
 
-	let stop = tokio::time::sleep(Duration::from_secs(5));
+	let stop = tokio::time::sleep(Duration::from_secs(500));
 	tokio::pin!(stop);
 
-	let restart = tokio::time::sleep(Duration::from_secs(15));
+	let restart = tokio::time::sleep(Duration::from_secs(500));
 	tokio::pin!(restart);
 
 	loop {
@@ -120,7 +122,7 @@ impl OnNewObjects for MyCallback {
 		 tracing::info!("Received objects: {_asdu:?}");
 	}
 }
-
+/* 
 /// Check the error to see if it is a critical error
 fn check_error(r: Result<(), LinkError>) -> Result<(), Whatever> {
 	if let Err(e) = r {
@@ -137,3 +139,4 @@ fn check_error(r: Result<(), LinkError>) -> Result<(), Whatever> {
 		Ok(())
 	}
 }
+ */

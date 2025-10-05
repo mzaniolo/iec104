@@ -1,7 +1,6 @@
-use std::{net::SocketAddr, sync::{atomic::AtomicBool, Arc}};
+use std::{sync::{atomic::AtomicBool, Arc}};
 
 use atomic_enum::atomic_enum;
-use futures::Stream;
 use snafu::{ResultExt as _, whatever};
 use tokio::{
 	io::{ReadHalf, WriteHalf},
@@ -99,7 +98,7 @@ impl ConnectionHandler {
 		loop {
 			match self.state.load(std::sync::atomic::Ordering::Relaxed) {
 				ConnectionHandlerState::WaitingForStart => {
-					tracing::debug!("Winting for start");
+					tracing::debug!("Wainting for start");
 					if let Some(cmd) = self.rx.recv().await {
 						match cmd {
 							ConnectionHandlerCommand::Start => {
@@ -202,8 +201,19 @@ impl ConnectionHandler {
 
 		let (stream, _addr) = listener.accept().await
 		.whatever_context("Error connecting")?;
+		tracing::info!("Client connecté");
 
-		Ok( Connection::Tcp(stream) )
+		Ok(if let Some(ref tls) = config.tls {
+			let connector = Self::make_tls_connector(tls)?;
+			Connection::Tls(
+				connector
+					.connect(&config.address, stream)
+					.await
+					.whatever_context("Error connecting TLS ")?,
+			)
+		} else {
+			Connection::Tcp(stream)
+		})
 	}
 
 	#[instrument(level = "debug")]

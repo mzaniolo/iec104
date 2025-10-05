@@ -65,10 +65,10 @@ async fn main() -> Result<(), Whatever> {
 	let period = tokio::time::sleep(Duration::from_secs(1));
 	tokio::pin!(period);
 
-	let stop = tokio::time::sleep(Duration::from_secs(5));
+	let stop = tokio::time::sleep(Duration::from_secs(500));
 	tokio::pin!(stop);
 
-	let restart = tokio::time::sleep(Duration::from_secs(15));
+	let restart = tokio::time::sleep(Duration::from_secs(500));
 	tokio::pin!(restart);
 
 	loop {
@@ -101,6 +101,7 @@ async fn main() -> Result<(), Whatever> {
 			}
 			_ = &mut restart => {
 				tracing::info!("Restarting");
+				link.stop_receiving().await.whatever_context("Failed to stop receiving")?;
 				link.start_receiving().await.whatever_context("Failed to start receiving")?;
 				restart.as_mut().reset(Instant::now() + Duration::from_secs(3615));
 			}

@@ -163,7 +163,7 @@ impl<'a> ReceiveHandler<'a> {
 					}
 				}
 				_ = &mut self.t3 => {
-					tracing::debug!("t3 timeout. Sending test frame");
+					tracing::debug!("t3 timeout. FAKE Sending test frame");
 					self.send_test_frame().await.whatever_context("Error sending test frame for t3 timeout")?;
 				}
 				_ = &mut self.t2 => {
