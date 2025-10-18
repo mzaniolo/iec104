@@ -197,7 +197,7 @@ impl ConnectionHandler {
 		let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.address, config.port))
 			.await
 			.whatever_context("Error binding to address")?;
-    	tracing::info!("Serveur TCP en écoute sur {}:{}", config.address, config.port);
+    	tracing::info!("TCP server listening to {}:{}", config.address, config.port);
 
 		let (stream, _addr) = listener.accept().await
 		.whatever_context("Error connecting")?;
