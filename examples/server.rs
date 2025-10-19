@@ -3,17 +3,20 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{FutureExt, future::pending};
+//use snafu::{ResultExt as _, Whatever, whatever};
+use futures::FutureExt;
+use futures::future::pending;
 use iec104::{
 	asdu::Asdu,
 	config::LinkConfig,
-	link::{Link, OnNewObjects, errors::LinkError},
-	types::{
-		commands::Rcs,
-		information_elements::{Dpi, Spi},
-	},
+	//	types::{
+	//		commands::Rcs,
+	//		information_elements::{Dpi, Spi},
+	//	},
+	//	link::{Link, OnNewObjects, errors::LinkError},
+	link::{Link, OnNewObjects},
 };
-use snafu::{ResultExt as _, Whatever, whatever};
+use snafu::{ResultExt as _, Whatever};
 #[cfg(windows)]
 use tokio::signal;
 #[cfg(unix)]
@@ -34,7 +37,10 @@ async fn main() -> Result<(), Whatever> {
 		.with(ErrorLayer::default().with_filter(EnvFilter::from("debug")))
 		.init();
 
-	let mut link = Link::new(LinkConfig::default(), MyCallback);
+	let my_config = LinkConfig { server: true, ..Default::default() };
+
+	let mut link = Link::new(my_config, MyCallback);
+
 	link.connect().await.whatever_context("Failed to connect")?;
 	link.start_receiving().await.whatever_context("Failed to start receiving")?;
 
@@ -86,12 +92,7 @@ async fn main() -> Result<(), Whatever> {
 			},
 			_ = &mut period => {
 				tracing::info!("Period");
-				check_error(link.send_command_rc(47, 13, Rcs::Increment, None, None, None).await)?;
-				check_error(link.send_command_sp(47, 14, Spi::On, None, None, None).await)?;
-				check_error(link.send_command_dp(47, 15, Dpi::On, None, None, None).await)?;
-				check_error(link.send_command_bs(47, 16, 1, None).await)?;
-
-				period.as_mut().reset(Instant::now() + Duration::from_secs(1));
+				period.as_mut().reset(Instant::now() + Duration::from_secs(10));
 			},
 			_ = &mut stop => {
 				tracing::info!("Stopping");
@@ -100,7 +101,6 @@ async fn main() -> Result<(), Whatever> {
 			}
 			_ = &mut restart => {
 				tracing::info!("Restarting");
-				link.stop_receiving().await.whatever_context("Failed to stop receiving")?;
 				link.start_receiving().await.whatever_context("Failed to start receiving")?;
 				restart.as_mut().reset(Instant::now() + Duration::from_secs(3615));
 			}
@@ -121,7 +121,7 @@ impl OnNewObjects for MyCallback {
 		tracing::info!("Received objects: {_asdu:?}");
 	}
 }
-
+/*
 /// Check the error to see if it is a critical error
 fn check_error(r: Result<(), LinkError>) -> Result<(), Whatever> {
 	if let Err(e) = r {
@@ -138,3 +138,4 @@ fn check_error(r: Result<(), LinkError>) -> Result<(), Whatever> {
 		Ok(())
 	}
 }
+ */

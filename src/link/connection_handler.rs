@@ -16,9 +16,9 @@ use tracing::instrument;
 use crate::{
 	apdu::Frame,
 	asdu::Asdu,
-	client::{Connection, OnNewObjects, START_DT_ACT_FRAME, receive_handler::ReceiveHandler},
-	config::{ClientConfig, TlsClientConfig},
+	config::{LinkConfig, TlsConfig},
 	error::Error,
+	link::{Connection, OnNewObjects, START_DT_ACT_FRAME, receive_handler::ReceiveHandler},
 };
 
 #[atomic_enum]
@@ -42,7 +42,7 @@ pub struct ConnectionHandler {
 	read_connection: ReadHalf<Connection>,
 	write_connection: WriteHalf<Connection>,
 	callback: Arc<dyn OnNewObjects + Send + Sync>,
-	config: ClientConfig,
+	config: LinkConfig,
 	state: Arc<AtomicConnectionHandlerState>,
 	rx: mpsc::Receiver<ConnectionHandlerCommand>,
 	out_buffer_full: Arc<AtomicBool>,
@@ -51,24 +51,41 @@ pub struct ConnectionHandler {
 impl ConnectionHandler {
 	pub async fn new(
 		callback: Arc<dyn OnNewObjects + Send + Sync>,
-		config: ClientConfig,
+		config: LinkConfig,
 		rx: mpsc::Receiver<ConnectionHandlerCommand>,
 		out_buffer_full: Arc<AtomicBool>,
 	) -> Result<Self, Error> {
-		let connection =
-			Self::make_connection(&config).await.whatever_context("Error making connection")?;
-		let (read_connection, write_connection) = tokio::io::split(connection);
-		Ok(Self {
-			callback,
-			config,
-			state: Arc::new(AtomicConnectionHandlerState::new(
-				ConnectionHandlerState::WaitingForStart,
-			)),
-			read_connection,
-			write_connection,
-			rx,
-			out_buffer_full,
-		})
+		if config.server {
+			let connection =
+				Self::make_server(&config).await.whatever_context("Error making server")?;
+			let (read_connection, write_connection) = tokio::io::split(connection);
+			Ok(Self {
+				callback,
+				config,
+				state: Arc::new(AtomicConnectionHandlerState::new(
+					ConnectionHandlerState::WaitingForStart,
+				)),
+				read_connection,
+				write_connection,
+				rx,
+				out_buffer_full,
+			})
+		} else {
+			let connection =
+				Self::make_connection(&config).await.whatever_context("Error making connection")?;
+			let (read_connection, write_connection) = tokio::io::split(connection);
+			Ok(Self {
+				callback,
+				config,
+				state: Arc::new(AtomicConnectionHandlerState::new(
+					ConnectionHandlerState::WaitingForStart,
+				)),
+				read_connection,
+				write_connection,
+				rx,
+				out_buffer_full,
+			})
+		}
 	}
 
 	pub fn get_state(&self) -> Arc<AtomicConnectionHandlerState> {
@@ -80,6 +97,7 @@ impl ConnectionHandler {
 		loop {
 			match self.state.load(std::sync::atomic::Ordering::Relaxed) {
 				ConnectionHandlerState::WaitingForStart => {
+					tracing::debug!("Waiting for start");
 					if let Some(cmd) = self.rx.recv().await {
 						match cmd {
 							ConnectionHandlerCommand::Start => {
@@ -99,7 +117,9 @@ impl ConnectionHandler {
 				}
 				ConnectionHandlerState::Starting => {
 					tracing::debug!("Starting");
-					if let Err(e) = self.send_start_dt().await {
+					if !self.config.server
+						&& let Err(e) = self.send_start_dt().await
+					{
 						tracing::error!("Error sending startDT: {e}. Reconnecting");
 						self.state.store(
 							ConnectionHandlerState::Reconnecting,
@@ -107,6 +127,7 @@ impl ConnectionHandler {
 						);
 						continue;
 					}
+
 					tracing::debug!("StartDT activation confirmed");
 					self.state.store(
 						ConnectionHandlerState::Started,
@@ -140,23 +161,62 @@ impl ConnectionHandler {
 				}
 				ConnectionHandlerState::Reconnecting => {
 					tracing::debug!("Reconnecting");
-					let Ok(connection) = Self::make_connection(&self.config).await else {
-						tracing::error!("Error making connection");
-						tokio::time::sleep(self.config.protocol.t0).await;
+					if self.config.server {
+						let Ok(connection) = Self::make_server(&self.config).await else {
+							tracing::error!("Error making server");
+							tokio::time::sleep(self.config.protocol.t0).await;
+							continue;
+						};
+						(self.read_connection, self.write_connection) =
+							tokio::io::split(connection);
+						self.state.store(
+							ConnectionHandlerState::Starting,
+							std::sync::atomic::Ordering::Relaxed,
+						);
 						continue;
-					};
-					(self.read_connection, self.write_connection) = tokio::io::split(connection);
-					self.state.store(
-						ConnectionHandlerState::Starting,
-						std::sync::atomic::Ordering::Relaxed,
-					);
+					} else {
+						let Ok(connection) = Self::make_connection(&self.config).await else {
+							tracing::error!("Error making connection");
+							tokio::time::sleep(self.config.protocol.t0).await;
+							continue;
+						};
+						(self.read_connection, self.write_connection) =
+							tokio::io::split(connection);
+						self.state.store(
+							ConnectionHandlerState::Starting,
+							std::sync::atomic::Ordering::Relaxed,
+						);
+					}
 				}
 			}
 		}
 	}
 
 	#[instrument(level = "debug")]
-	async fn make_connection(config: &ClientConfig) -> Result<Connection, Error> {
+	async fn make_server(config: &LinkConfig) -> Result<Connection, Error> {
+		let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.address, config.port))
+			.await
+			.whatever_context("Error binding to address")?;
+		tracing::info!("TCP server listening to {}:{}", config.address, config.port);
+
+		let (stream, _addr) = listener.accept().await.whatever_context("Error connecting")?;
+		tracing::info!("Client connecté");
+
+		Ok(if let Some(ref tls) = config.tls {
+			let connector = Self::make_tls_connector(tls)?;
+			Connection::Tls(Box::new(
+				connector
+					.connect(&config.address, stream)
+					.await
+					.whatever_context("Error connecting TLS ")?,
+			))
+		} else {
+			Connection::Tcp(stream)
+		})
+	}
+
+	#[instrument(level = "debug")]
+	async fn make_connection(config: &LinkConfig) -> Result<Connection, Error> {
 		let stream = tokio::time::timeout(
 			config.protocol.t0,
 			TcpStream::connect(format!("{}:{}", config.address, config.port)),
@@ -167,19 +227,19 @@ impl ConnectionHandler {
 
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
+			Connection::Tls(Box::new(
 				connector
 					.connect(&config.address, stream)
 					.await
 					.whatever_context("Error connecting")?,
-			)
+			))
 		} else {
 			Connection::Tcp(stream)
 		})
 	}
 
 	#[instrument(level = "debug")]
-	fn make_tls_connector(tls: &TlsClientConfig) -> Result<TlsConnector, Error> {
+	fn make_tls_connector(tls: &TlsConfig) -> Result<TlsConnector, Error> {
 		let root_cert: Option<Certificate> = tls
 			.server_certificate
 			.as_ref()

@@ -18,12 +18,12 @@ use tracing::instrument;
 use crate::{
 	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAN_HEADER, UFrame},
 	asdu::Asdu,
-	client::{
+	config::LinkConfig,
+	error::Error,
+	link::{
 		Connection, OnNewObjects, START_DT_CON_FRAME, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME,
 		TEST_FR_ACT_FRAME, TEST_FR_CON_FRAME, connection_handler::ConnectionHandlerCommand,
 	},
-	config::ClientConfig,
-	error::Error,
 };
 
 lazy_static! {
@@ -34,7 +34,7 @@ pub struct ReceiveHandler<'a> {
 	read_connection: &'a mut ReadHalf<Connection>,
 	write_connection: &'a mut WriteHalf<Connection>,
 	callback: Arc<dyn OnNewObjects + Send + Sync>,
-	config: ClientConfig,
+	config: LinkConfig,
 	rx: &'a mut mpsc::Receiver<ConnectionHandlerCommand>,
 	out_buffer_full: Arc<AtomicBool>,
 	t1_u: Pin<Box<tokio::time::Sleep>>,
@@ -53,7 +53,7 @@ impl<'a> ReceiveHandler<'a> {
 		read_connection: &'a mut ReadHalf<Connection>,
 		write_connection: &'a mut WriteHalf<Connection>,
 		callback: Arc<dyn OnNewObjects + Send + Sync>,
-		config: ClientConfig,
+		config: LinkConfig,
 		rx: &'a mut mpsc::Receiver<ConnectionHandlerCommand>,
 		out_buffer_full: Arc<AtomicBool>,
 	) -> Self {
@@ -301,11 +301,17 @@ impl<'a> ReceiveHandler<'a> {
 				.whatever_context("Error sending test frame")?;
 		} else if u.start_dt_activation {
 			tracing::debug!("StartDT activation");
-			//TODO: We already stated. We shouldn't be receiving this frame
-			//TODO: What else should we do here?
-			Self::send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
+			if self.config.server {
+				tracing::debug!("Server mode: sending StartDT confirmation");
+				Self::send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
+					.await
+					.whatever_context("Error sending startDT confirmation")?;
+			} else {
+				tracing::debug!("Client mode: received unexpected StartDT activation");
+				whatever!("Received unexpected StartDT activation");
+			}
+		} else if u.start_dt_confirmation {
+			tracing::debug!("StartDT confirmation");
 		} else if u.stop_dt_activation {
 			Self::send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
 				.await

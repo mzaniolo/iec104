@@ -19,13 +19,13 @@ use tracing::instrument;
 use crate::{
 	apdu::{Frame, UFrame},
 	asdu::Asdu,
-	client::{
-		connection_handler::{ConnectionHandler, ConnectionHandlerState},
-		errors::ClientError,
-	},
-	config::ClientConfig,
+	config::LinkConfig,
 	cot::Cot,
 	error::Error,
+	link::{
+		connection_handler::{ConnectionHandler, ConnectionHandlerState},
+		errors::LinkError,
+	},
 	types::{
 		CBoNa1, CBoTa1, CScNa1, CScTa1, CdcNa1, CdcTa1, CrcNa1, CrcTa1, GenericObject,
 		InformationObjects,
@@ -60,7 +60,7 @@ lazy_static! {
 #[derive(Debug)]
 enum Connection {
 	Tcp(TcpStream),
-	Tls(TlsStream<TcpStream>),
+	Tls(Box<TlsStream<TcpStream>>),
 }
 
 impl AsyncRead for Connection {
@@ -114,8 +114,8 @@ pub trait OnNewObjects {
 	async fn on_new_objects(&self, asdu: Asdu);
 }
 
-pub struct Client {
-	config: ClientConfig,
+pub struct Link {
+	config: LinkConfig,
 	callback: Arc<dyn OnNewObjects + Send + Sync>,
 	receive_task: Option<JoinHandle<Result<(), Error>>>,
 	write_tx: Option<mpsc::Sender<ConnectionHandlerCommand>>,
@@ -123,9 +123,9 @@ pub struct Client {
 	connection_handler_state: Option<Arc<AtomicConnectionHandlerState>>,
 }
 
-impl Client {
+impl Link {
 	#[must_use]
-	pub fn new(config: ClientConfig, callback: impl OnNewObjects + Send + Sync + 'static) -> Self {
+	pub fn new(config: LinkConfig, callback: impl OnNewObjects + Send + Sync + 'static) -> Self {
 		Self {
 			config,
 			callback: Arc::new(callback),
@@ -166,7 +166,36 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	pub async fn send_asdu(&self, asdu: Asdu) -> Result<(), ClientError> {
+	pub async fn listen_accept(&mut self) -> Result<(), Error> {
+		if self.receive_task.is_some() {
+			whatever!("Receive task already running");
+		}
+
+		let (tx, rx) = mpsc::channel(1024);
+
+		let callback = self.callback.clone();
+		let config = self.config.clone();
+		let out_buffer_full = self.out_buffer_full.clone();
+
+		let mut connection_handler =
+			ConnectionHandler::new(callback, config, rx, out_buffer_full).await?;
+
+		self.connection_handler_state = Some(connection_handler.get_state());
+
+		self.receive_task = Some(tokio::spawn(async move {
+			connection_handler
+				.run()
+				.await
+				.inspect_err(|e| tracing::error!("Error in running connection handler: {e}"))
+		}));
+
+		self.write_tx = Some(tx);
+
+		Ok(())
+	}
+
+	#[instrument(level = "debug")]
+	pub async fn send_asdu(&self, asdu: Asdu) -> Result<(), LinkError> {
 		self.check_connection_started()?;
 
 		if self.out_buffer_full.load(std::sync::atomic::Ordering::Relaxed) {
@@ -182,7 +211,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	pub async fn start_receiving(&mut self) -> Result<(), ClientError> {
+	pub async fn start_receiving(&mut self) -> Result<(), LinkError> {
 		self.check_connected()?;
 
 		if let Some(state) = &self.connection_handler_state
@@ -201,7 +230,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	pub async fn stop_receiving(&mut self) -> Result<(), ClientError> {
+	pub async fn stop_receiving(&mut self) -> Result<(), LinkError> {
 		self.check_connection_started()?;
 
 		if let Some(tx) = &self.write_tx {
@@ -213,7 +242,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	pub async fn send_test_frame(&mut self) -> Result<(), ClientError> {
+	pub async fn send_test_frame(&mut self) -> Result<(), LinkError> {
 		self.check_connection_started()?;
 
 		if let Some(tx) = &self.write_tx {
@@ -232,7 +261,7 @@ impl Client {
 		timestamp: Option<Cp56Time2a>,
 		select_execute: Option<SelectExecute>,
 		qu: Option<Qu>,
-	) -> Result<(), ClientError> {
+	) -> Result<(), LinkError> {
 		let sco = Sco {
 			se: select_execute.unwrap_or(SelectExecute::Execute),
 			qu: qu.unwrap_or(Qu::Unspecified),
@@ -276,7 +305,7 @@ impl Client {
 		timestamp: Option<Cp56Time2a>,
 		select_execute: Option<SelectExecute>,
 		qu: Option<Qu>,
-	) -> Result<(), ClientError> {
+	) -> Result<(), LinkError> {
 		let dco = Dco {
 			se: select_execute.unwrap_or(SelectExecute::Execute),
 			qu: qu.unwrap_or(Qu::Unspecified),
@@ -320,7 +349,7 @@ impl Client {
 		timestamp: Option<Cp56Time2a>,
 		select_execute: Option<SelectExecute>,
 		qu: Option<Qu>,
-	) -> Result<(), ClientError> {
+	) -> Result<(), LinkError> {
 		let rco = Rco {
 			se: select_execute.unwrap_or(SelectExecute::Execute),
 			qu: qu.unwrap_or(Qu::Unspecified),
@@ -362,7 +391,7 @@ impl Client {
 		ioa: u32,
 		value: u32,
 		timestamp: Option<Cp56Time2a>,
-	) -> Result<(), ClientError> {
+	) -> Result<(), LinkError> {
 		let (type_id, information_objects) = match timestamp {
 			Some(timestamp) => (
 				TypeId::C_BO_TA_1,
@@ -394,7 +423,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	fn check_connection_started(&self) -> Result<(), ClientError> {
+	fn check_connection_started(&self) -> Result<(), LinkError> {
 		self.check_connected()?;
 
 		if let Some(state) = &self.connection_handler_state
@@ -407,7 +436,7 @@ impl Client {
 	}
 
 	#[instrument(level = "debug")]
-	fn check_connected(&self) -> Result<(), ClientError> {
+	fn check_connected(&self) -> Result<(), LinkError> {
 		if self.connection_handler_state.is_none() {
 			return errors::NotConnected.fail();
 		}
@@ -422,7 +451,7 @@ impl Client {
 	}
 }
 
-impl Debug for Client {
+impl Debug for Link {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(
 			f,

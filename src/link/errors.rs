@@ -6,7 +6,7 @@ use crate::error::SpanTraceWrapper;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub), context(suffix(false)))]
-pub enum ClientError {
+pub enum LinkError {
 	#[snafu(display("Client is not connected"))]
 	NotConnected {
 		#[snafu(implicit)]
