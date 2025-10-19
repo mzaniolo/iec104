@@ -3,25 +3,25 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use iec104::{
-	asdu::Asdu,
-//	link::{Link, OnNewObjects, errors::LinkError},
-	link::{Link, OnNewObjects},
-	config::LinkConfig,
-//	types::{
-//		commands::Rcs,
-//		information_elements::{Dpi, Spi},
-//	},
-};
 //use snafu::{ResultExt as _, Whatever, whatever};
-use snafu::{ResultExt as _, Whatever};
-#[cfg(unix)]
-use tokio::signal::unix::{SignalKind, signal};
-#[cfg(windows)]
-use tokio::signal;
-use tokio::time::Instant;
 use futures::FutureExt;
 use futures::future::pending;
+use iec104::{
+	asdu::Asdu,
+	config::LinkConfig,
+	//	types::{
+	//		commands::Rcs,
+	//		information_elements::{Dpi, Spi},
+	//	},
+	//	link::{Link, OnNewObjects, errors::LinkError},
+	link::{Link, OnNewObjects},
+};
+use snafu::{ResultExt as _, Whatever};
+#[cfg(windows)]
+use tokio::signal;
+#[cfg(unix)]
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::time::Instant;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{
 	Layer as _, filter::EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _,
@@ -37,8 +37,7 @@ async fn main() -> Result<(), Whatever> {
 		.with(ErrorLayer::default().with_filter(EnvFilter::from("debug")))
 		.init();
 
-	let mut my_config = LinkConfig::default();
-	my_config.server = true;
+	let my_config = LinkConfig { server: true, ..Default::default() };
 
 	let mut link = Link::new(my_config, MyCallback);
 
@@ -119,10 +118,10 @@ struct MyCallback;
 #[async_trait]
 impl OnNewObjects for MyCallback {
 	async fn on_new_objects(&self, _asdu: Asdu) {
-		 tracing::info!("Received objects: {_asdu:?}");
+		tracing::info!("Received objects: {_asdu:?}");
 	}
 }
-/* 
+/*
 /// Check the error to see if it is a critical error
 fn check_error(r: Result<(), LinkError>) -> Result<(), Whatever> {
 	if let Err(e) = r {

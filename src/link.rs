@@ -19,13 +19,13 @@ use tracing::instrument;
 use crate::{
 	apdu::{Frame, UFrame},
 	asdu::Asdu,
+	config::LinkConfig,
+	cot::Cot,
+	error::Error,
 	link::{
 		connection_handler::{ConnectionHandler, ConnectionHandlerState},
 		errors::LinkError,
 	},
-	config::LinkConfig,
-	cot::Cot,
-	error::Error,
 	types::{
 		CBoNa1, CBoTa1, CScNa1, CScTa1, CdcNa1, CdcTa1, CrcNa1, CrcTa1, GenericObject,
 		InformationObjects,
@@ -60,7 +60,7 @@ lazy_static! {
 #[derive(Debug)]
 enum Connection {
 	Tcp(TcpStream),
-	Tls(TlsStream<TcpStream>),
+	Tls(Box<TlsStream<TcpStream>>),
 }
 
 impl AsyncRead for Connection {

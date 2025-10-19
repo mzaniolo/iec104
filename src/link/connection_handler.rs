@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc}};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use atomic_enum::atomic_enum;
 use snafu::{ResultExt as _, whatever};
@@ -16,9 +16,9 @@ use tracing::instrument;
 use crate::{
 	apdu::Frame,
 	asdu::Asdu,
-	link::{Connection, OnNewObjects, START_DT_ACT_FRAME, receive_handler::ReceiveHandler},
 	config::{LinkConfig, TlsConfig},
 	error::Error,
+	link::{Connection, OnNewObjects, START_DT_ACT_FRAME, receive_handler::ReceiveHandler},
 };
 
 #[atomic_enum]
@@ -59,7 +59,7 @@ impl ConnectionHandler {
 			let connection =
 				Self::make_server(&config).await.whatever_context("Error making server")?;
 			let (read_connection, write_connection) = tokio::io::split(connection);
-			return Ok(Self {
+			Ok(Self {
 				callback,
 				config,
 				state: Arc::new(AtomicConnectionHandlerState::new(
@@ -69,7 +69,7 @@ impl ConnectionHandler {
 				write_connection,
 				rx,
 				out_buffer_full,
-			});
+			})
 		} else {
 			let connection =
 				Self::make_connection(&config).await.whatever_context("Error making connection")?;
@@ -84,8 +84,7 @@ impl ConnectionHandler {
 				write_connection,
 				rx,
 				out_buffer_full,
-				}
-			)
+			})
 		}
 	}
 
@@ -98,7 +97,7 @@ impl ConnectionHandler {
 		loop {
 			match self.state.load(std::sync::atomic::Ordering::Relaxed) {
 				ConnectionHandlerState::WaitingForStart => {
-					tracing::debug!("Wainting for start");
+					tracing::debug!("Waiting for start");
 					if let Some(cmd) = self.rx.recv().await {
 						match cmd {
 							ConnectionHandlerCommand::Start => {
@@ -118,17 +117,17 @@ impl ConnectionHandler {
 				}
 				ConnectionHandlerState::Starting => {
 					tracing::debug!("Starting");
-					if !self.config.server {
-
-						if let Err(e) = self.send_start_dt().await {
-							tracing::error!("Error sending startDT: {e}. Reconnecting");
-							self.state.store(
-								ConnectionHandlerState::Reconnecting,
-								std::sync::atomic::Ordering::Relaxed,
-							);
-							continue;
-						}
+					if !self.config.server
+						&& let Err(e) = self.send_start_dt().await
+					{
+						tracing::error!("Error sending startDT: {e}. Reconnecting");
+						self.state.store(
+							ConnectionHandlerState::Reconnecting,
+							std::sync::atomic::Ordering::Relaxed,
+						);
+						continue;
 					}
+
 					tracing::debug!("StartDT activation confirmed");
 					self.state.store(
 						ConnectionHandlerState::Started,
@@ -168,7 +167,8 @@ impl ConnectionHandler {
 							tokio::time::sleep(self.config.protocol.t0).await;
 							continue;
 						};
-						(self.read_connection, self.write_connection) = tokio::io::split(connection);
+						(self.read_connection, self.write_connection) =
+							tokio::io::split(connection);
 						self.state.store(
 							ConnectionHandlerState::Starting,
 							std::sync::atomic::Ordering::Relaxed,
@@ -180,7 +180,8 @@ impl ConnectionHandler {
 							tokio::time::sleep(self.config.protocol.t0).await;
 							continue;
 						};
-						(self.read_connection, self.write_connection) = tokio::io::split(connection);
+						(self.read_connection, self.write_connection) =
+							tokio::io::split(connection);
 						self.state.store(
 							ConnectionHandlerState::Starting,
 							std::sync::atomic::Ordering::Relaxed,
@@ -193,24 +194,22 @@ impl ConnectionHandler {
 
 	#[instrument(level = "debug")]
 	async fn make_server(config: &LinkConfig) -> Result<Connection, Error> {
-
 		let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.address, config.port))
 			.await
 			.whatever_context("Error binding to address")?;
-    	tracing::info!("TCP server listening to {}:{}", config.address, config.port);
+		tracing::info!("TCP server listening to {}:{}", config.address, config.port);
 
-		let (stream, _addr) = listener.accept().await
-		.whatever_context("Error connecting")?;
+		let (stream, _addr) = listener.accept().await.whatever_context("Error connecting")?;
 		tracing::info!("Client connecté");
 
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
+			Connection::Tls(Box::new(
 				connector
 					.connect(&config.address, stream)
 					.await
 					.whatever_context("Error connecting TLS ")?,
-			)
+			))
 		} else {
 			Connection::Tcp(stream)
 		})
@@ -228,12 +227,12 @@ impl ConnectionHandler {
 
 		Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
+			Connection::Tls(Box::new(
 				connector
 					.connect(&config.address, stream)
 					.await
 					.whatever_context("Error connecting")?,
-			)
+			))
 		} else {
 			Connection::Tcp(stream)
 		})

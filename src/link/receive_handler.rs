@@ -18,12 +18,12 @@ use tracing::instrument;
 use crate::{
 	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAN_HEADER, UFrame},
 	asdu::Asdu,
+	config::LinkConfig,
+	error::Error,
 	link::{
 		Connection, OnNewObjects, START_DT_CON_FRAME, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME,
 		TEST_FR_ACT_FRAME, TEST_FR_CON_FRAME, connection_handler::ConnectionHandlerCommand,
 	},
-	config::LinkConfig,
-	error::Error,
 };
 
 lazy_static! {
@@ -163,7 +163,7 @@ impl<'a> ReceiveHandler<'a> {
 					}
 				}
 				_ = &mut self.t3 => {
-					tracing::debug!("t3 timeout. FAKE Sending test frame");
+					tracing::debug!("t3 timeout. Sending test frame");
 					self.send_test_frame().await.whatever_context("Error sending test frame for t3 timeout")?;
 				}
 				_ = &mut self.t2 => {
@@ -312,8 +312,6 @@ impl<'a> ReceiveHandler<'a> {
 			}
 		} else if u.start_dt_confirmation {
 			tracing::debug!("StartDT confirmation");
-
-
 		} else if u.stop_dt_activation {
 			Self::send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
 				.await

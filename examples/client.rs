@@ -3,23 +3,22 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::{FutureExt, future::pending};
 use iec104::{
 	asdu::Asdu,
-	link::{Link, OnNewObjects, errors::LinkError},
 	config::LinkConfig,
+	link::{Link, OnNewObjects, errors::LinkError},
 	types::{
 		commands::Rcs,
 		information_elements::{Dpi, Spi},
 	},
 };
 use snafu::{ResultExt as _, Whatever, whatever};
-#[cfg(unix)]
-use tokio::signal::unix::{SignalKind, signal};
 #[cfg(windows)]
 use tokio::signal;
+#[cfg(unix)]
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::Instant;
-use futures::FutureExt;
-use futures::future::pending;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{
 	Layer as _, filter::EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _,
@@ -119,7 +118,7 @@ struct MyCallback;
 #[async_trait]
 impl OnNewObjects for MyCallback {
 	async fn on_new_objects(&self, _asdu: Asdu) {
-		 tracing::info!("Received objects: {_asdu:?}");
+		tracing::info!("Received objects: {_asdu:?}");
 	}
 }
 

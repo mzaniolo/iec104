@@ -70,7 +70,6 @@ pub struct LinkConfig {
 	pub tls: Option<TlsConfig>,
 }
 
-
 impl Default for ProtocolConfig {
 	fn default() -> Self {
 		Self {
