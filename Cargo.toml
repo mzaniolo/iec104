@@ -44,6 +44,11 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["signal"] }
 
+[features]
+multi-thread=[]
+
+default=["multi-thread"]
+
 [lints.rust]
 dead_code = "warn"
 missing_debug_implementations = "warn"

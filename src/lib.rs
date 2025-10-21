@@ -8,3 +8,5 @@ pub mod cot;
 pub mod error;
 pub mod types;
 pub mod types_id;
+#[cfg(feature="multi-thread")]
+pub mod multi_thread;
