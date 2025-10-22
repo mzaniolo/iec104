@@ -798,11 +798,8 @@ impl Iec104Connection {
 		}
 		self.stop_watch_tx.send_replace(true);
 	}
-	async fn timer_thread(self) {
+	async fn timer_thread(mut self) {
 		loop {
-			if *self.stop_watch_rx.borrow() {
-				break;
-			}
 			match self.check_timeouts() {
 				Ok(frames) => {
 					for frame in frames {
@@ -827,7 +824,21 @@ impl Iec104Connection {
 					break;
 				}
 			}
-			tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+			tokio::select! {
+				_=tokio::time::sleep(tokio::time::Duration::from_millis(500))=>{}
+				res=self.stop_watch_rx.changed()=>{
+					match res {
+						Ok(_) => {
+							if *self.stop_watch_rx.borrow_and_update() {
+								break;
+							}
+						}
+						Err(_) => {
+							break;
+						}
+					}
+				}
+			}
 		}
 		self.stop_watch_tx.send_replace(true);
 	}
