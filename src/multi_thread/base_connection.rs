@@ -43,7 +43,7 @@ pub(crate) enum ConnectionType {
 	Server,
 }
 
-#[derive(Clone, Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ConnectionStatus {
 	Idle,
 	Inactive,
@@ -52,7 +52,7 @@ pub enum ConnectionStatus {
 	WaitingForSTOPDTCON,
 }
 
-#[derive(Clone, Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ConnectionEvent {
 	Opened,
 	Closed,
@@ -87,7 +87,7 @@ pub(crate) struct Iec104Connection {
 	// The channel sender to feedback send result.
 	send_result_broadcast_tx: tokio::sync::broadcast::Sender<(u16, Result<(), String>)>,
 	// The channel sender to feedback confirm info.
-	send_confirm_broadcast_tx: tokio::sync::broadcast::Sender<(u16, bool)>,
+	send_confirm_broadcast_tx: tokio::sync::broadcast::Sender<(u16, cot::Cot, bool)>,
 	// The status change watch tx & rx.
 	connection_status_watch_tx: tokio::sync::watch::Sender<ConnectionStatus>,
 	connection_status_watch_rx: tokio::sync::watch::Receiver<ConnectionStatus>,
@@ -126,8 +126,7 @@ impl Iec104Connection {
 		let (send_mpsc_tx, send_mpsc_rx) = tokio::sync::mpsc::channel(CHANNEL_BUFFER_SIZE);
 		let (connection_status_watch_tx, connection_status_watch_rx) =
 			tokio::sync::watch::channel(ConnectionStatus::Idle);
-		let (send_result_broadcast_tx, _) =
-			tokio::sync::broadcast::channel(CHANNEL_BUFFER_SIZE);
+		let (send_result_broadcast_tx, _) = tokio::sync::broadcast::channel(CHANNEL_BUFFER_SIZE);
 		let (send_confirm_broadcast_tx, _send_confirm_broadcast_rx) =
 			tokio::sync::broadcast::channel(CHANNEL_BUFFER_SIZE);
 		let (read_half, write_half) = stream.into_split();
@@ -154,20 +153,20 @@ impl Iec104Connection {
 			sent_i_frames: Arc::new(Mutex::new(VecDeque::new())),
 			i_frames_waiting_confirm: Arc::new(Mutex::new(Vec::new())),
 		};
-        let read_thread_connection = connection.clone();
-        let write_thread_connection = connection.clone();
-        let timer_thread_connection = connection.clone();
+		let read_thread_connection = connection.clone();
+		let write_thread_connection = connection.clone();
+		let timer_thread_connection = connection.clone();
 		tokio::task::spawn(read_thread_connection.read_thread(read_half));
 		tokio::task::spawn(write_thread_connection.write_thread(send_mpsc_rx, write_half));
 		connection.callbacks.on_connection_event(ConnectionEvent::Opened).await?;
 		if let ConnectionType::Client = connection.connection_type {
 			connection.send(START_DT_ACT_FRAME.to_owned()).await?;
 		}
-        connection.wait_ready_or_timeout(false).await?;
+		connection.wait_ready_or_timeout(false).await?;
 		tokio::task::spawn(timer_thread_connection.timer_thread());
-        return Ok(connection);
+		return Ok(connection);
 	}
-	pub(crate) fn status(&self)->ConnectionStatus{
+	pub(crate) fn status(&self) -> ConnectionStatus {
 		return *self.connection_status_watch_rx.borrow();
 	}
 	pub(crate) fn is_closed(&self) -> bool {
@@ -219,20 +218,20 @@ impl Iec104Connection {
 			self.connection_status_watch_rx.changed().await.whatever_context("Channel error")?;
 		}
 	}
-    async fn wait_ready_or_timeout(&mut self, is_startdt: bool) -> Result<(), Error> {
-        if self.is_ready(is_startdt)? {
-            return Ok(());
-        }
-		let t1=self.protocol.t1.clone();
-        tokio::select! {
-            res=self.wait_ready(is_startdt) => {
-                return res;
-            }
-            _=tokio::time::sleep(t1) => {
+	async fn wait_ready_or_timeout(&mut self, is_startdt: bool) -> Result<(), Error> {
+		if self.is_ready(is_startdt)? {
+			return Ok(());
+		}
+		let t1 = self.protocol.t1.clone();
+		tokio::select! {
+			res=self.wait_ready(is_startdt) => {
+				return res;
+			}
+			_=tokio::time::sleep(t1) => {
 				snafu::whatever!("Wait ready timeout ( t1 = {} s)", t1.as_secs());
-            }
-        }
-    }
+			}
+		}
+	}
 	async fn wait_send_result(
 		&self,
 		id: u16,
@@ -255,18 +254,34 @@ impl Iec104Connection {
 	async fn wait_send_confirm(
 		&self,
 		id: u16,
-		rx: &mut tokio::sync::broadcast::Receiver<(u16, bool)>,
+		rx: &mut tokio::sync::broadcast::Receiver<(u16, cot::Cot, bool)>,
 		allow_negative: bool,
-	) -> Result<bool, String> {
+	) -> Result<(cot::Cot, bool), String> {
 		loop {
 			match rx.recv().await {
-				Ok((i, neg)) => {
+				Ok((i, cot, neg)) => {
 					if i == id {
-						if neg && !allow_negative {
-							return Err("Nagative confirm".to_string());
-						} else {
-							return Ok(!neg);
+						if !allow_negative {
+							if neg {
+								return Err("Nagative confirm".to_string());
+							}
+							match cot {
+								cot::Cot::UnknownType => {
+									return Err("Response: unknown type".to_string());
+								}
+								cot::Cot::UnknownCause => {
+									return Err("Response: unknown cause".to_string());
+								}
+								cot::Cot::UnknownAsduAddress => {
+									return Err("Response: unknown ASDU address".to_string());
+								}
+								cot::Cot::UnknownObjectAddress => {
+									return Err("Response: unknown object address".to_string());
+								}
+								_ => {}
+							}
 						}
+						return Ok((cot, !neg));
 					}
 				}
 				Err(e) => {
@@ -283,10 +298,7 @@ impl Iec104Connection {
 		}
 		let send_id = self.id_counter.fetch_add(1, atomic::Ordering::SeqCst);
 		let mut send_result_broadcast_rx = self.send_result_broadcast_tx.subscribe();
-		match self
-			.send_mpsc_tx
-			.send_timeout((send_id, need_confirm, frame), self.protocol.t2)
-			.await
+		match self.send_mpsc_tx.send_timeout((send_id, need_confirm, frame), self.protocol.t2).await
 		{
 			Ok(_) => {
 				tokio::select! {
@@ -315,14 +327,14 @@ impl Iec104Connection {
 		&self,
 		frame: apdu::Frame,
 		allow_negative: bool,
-	) -> Result<bool, Error> {
+	) -> Result<(cot::Cot, bool), Error> {
 		let send_id = self.send_base(frame, true).await?;
 		let mut send_confirm_broadcast_rx = self.send_confirm_broadcast_tx.subscribe();
 		tokio::select! {
 			res=self.wait_send_confirm(send_id, &mut send_confirm_broadcast_rx,allow_negative)=>{
 				match res{
-					Ok(succ) => {
-						return Ok(succ);
+					Ok(result) => {
+						return Ok(result);
 					}
 					Err(e) => {
 						snafu::whatever!("{}",e);
@@ -488,7 +500,10 @@ impl Iec104Connection {
 			Ok(sent_i_frames) => {
 				if !sent_i_frames.is_empty() {
 					if current_time - sent_i_frames.front().unwrap().sent_time >= self.protocol.t1 {
-						snafu::whatever!("I frame timeout ( t1 = {} s)", self.protocol.t1.as_secs());
+						snafu::whatever!(
+							"I frame timeout ( t1 = {} s)",
+							self.protocol.t1.as_secs()
+						);
 					}
 				}
 			}
@@ -551,7 +566,13 @@ impl Iec104Connection {
 						);
 					}
 					let mut confirm_result = None;
-					if iframe.asdu.cot == cot::Cot::ActivationConfirmation {
+					let cot = iframe.asdu.cot;
+					if cot == cot::Cot::ActivationConfirmation
+						|| cot == cot::Cot::UnknownType
+						|| cot == cot::Cot::UnknownCause
+						|| cot == cot::Cot::UnknownAsduAddress
+						|| cot == cot::Cot::UnknownObjectAddress
+					{
 						match self.i_frames_waiting_confirm.lock() {
 							Ok(mut i_frames_waiting_confirm) => {
 								if let Some(ind) = i_frames_waiting_confirm.iter().position(|f| {
@@ -561,7 +582,11 @@ impl Iec104Connection {
 										&& f.frame.asdu.information_objects
 											== iframe.asdu.information_objects
 								}) {
-									confirm_result = Some((i_frames_waiting_confirm[ind].send_id, iframe.asdu.positive));
+									confirm_result = Some((
+										i_frames_waiting_confirm[ind].send_id,
+										cot,
+										iframe.asdu.positive,
+									));
 									i_frames_waiting_confirm.remove(ind);
 								}
 							}

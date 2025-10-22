@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::{atomic, Arc}};
 
 use snafu::ResultExt;
 
-use crate::{apdu, config, error::Error};
+use crate::{apdu, config, cot, error::Error};
 
 use super::base_connection;
 
@@ -97,9 +97,10 @@ impl Client{
 	}
 	/// Send a frame, waiting until reomte confirmation is received or timeout.
 	/// Useful to ensure remote device has received control command.
-	/// Returns `true` if the frame was positive confirmed, otherwise `false`.
+	/// The first element of result is the COT of response, usually `ActivationConfirmation`.
+	/// The second element of result is `true` if the frame was positive confirmed, otherwise `false`.
 	/// If `allow_negative` is `false` and remote sends a negative confirmation, an error is returned.
-	pub async fn send_and_wait_confirm(&self,frame: apdu::Frame,allow_negative: bool)->Result<bool, Error>{
+	pub async fn send_and_wait_confirm(&self,frame: apdu::Frame,allow_negative: bool)->Result<(cot::Cot,bool), Error>{
 		return self.connection.send_and_wait_confirm(frame,allow_negative).await;
 	}
 	pub fn is_closed(&self)->bool{
