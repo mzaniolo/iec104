@@ -323,6 +323,9 @@ impl Iec104Connection {
 	pub(crate) async fn send(&self, frame: apdu::Frame) -> Result<u16, Error> {
 		return self.send_base(frame, false).await;
 	}
+	pub(crate) async fn send_owned(self, frame: apdu::Frame) -> Result<u16, Error> {
+		return self.send_base(frame, false).await;
+	}
 	pub(crate) async fn send_and_wait_confirm(
 		&self,
 		frame: apdu::Frame,
@@ -623,8 +626,8 @@ impl Iec104Connection {
 							.on_connection_event(ConnectionEvent::STARTDTCONReceived)
 							.await?;
 					} else if uframe.start_dt_activation {
-						self.send(START_DT_CON_FRAME.to_owned()).await?;
 						self.connection_status_watch_tx.send_replace(ConnectionStatus::Active);
+						self.send(START_DT_CON_FRAME.to_owned()).await?;
 					} else if uframe.stop_dt_confirmation {
 						self.connection_status_watch_tx.send_replace(ConnectionStatus::Inactive);
 						self.stop_watch_tx.send_replace(true);
@@ -645,6 +648,9 @@ impl Iec104Connection {
 		if self.unconfirmed_received_i_frames.load(atomic::Ordering::SeqCst) >= self.protocol.w {
 			responses.insert(0, apdu::Frame::S(self.confirm_outstanding_messages()));
 		}
+        for telegram in responses{
+            self.send(telegram).await?;
+        }
 		if cache.len() > 0 && cache[0] != 104 {
 			snafu::whatever!("Unexpected start byte: {:#02X}.", cache[0]);
 		}
