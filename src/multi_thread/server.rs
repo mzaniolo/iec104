@@ -96,7 +96,11 @@ impl Server {
 		match self.connections.lock() {
 			Ok(guard) => {
 				for connection in guard.iter() {
-					connection.stop().await?;
+					if let base_connection::ConnectionStatus::Active = connection.status(){
+						connection.stop().await?;
+					}else{
+						connection.close();
+					}
 				}
 				return Ok(());
 			}
