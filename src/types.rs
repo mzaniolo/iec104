@@ -62,6 +62,27 @@ pub trait ToBytes {
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError>;
 }
 
+/// Raw object for custom ASDUs.
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct RawObject {
+	pub raw: Vec<u8>,
+}
+
+impl FromBytes for RawObject {
+	#[instrument]
+	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
+		let raw = bytes.to_vec();
+		Ok(Self { raw })
+	}
+}
+
+impl ToBytes for RawObject {
+	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
+		buffer.extend_from_slice(&self.raw);
+		Ok(())
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GenericObject<T: FromBytes + ToBytes + Default> {
 	pub address: u32,
@@ -127,6 +148,7 @@ pub enum InformationObjects {
 	PMeNb1(Vec<GenericObject<PMeNb1>>),
 	PMeNc1(Vec<GenericObject<PMeNc1>>),
 	PAcNa1(Vec<GenericObject<PAcNa1>>),
+	Raw(Vec<GenericObject<RawObject>>),
 }
 
 impl InformationObjects {
@@ -137,6 +159,15 @@ impl InformationObjects {
 		num_objs: u8,
 		bytes: &[u8],
 	) -> Result<Vec<GenericObject<T>>, ParseError> {
+		if !type_id.is_standard() {
+			tracing::trace!("Building RAW information objects. Bytes: {:?}", bytes);
+			if bytes.len() < 3 {
+				return NotEnoughBytes.fail();
+			}
+			let address = u32::from_be_bytes([0, bytes[2], bytes[1], bytes[0]]);
+			let object = T::from_bytes(&bytes[3..])?;
+			return Ok(vec![GenericObject { address, object }]);
+		}
 		let object_size = type_id.size();
 		tracing::trace!(
 			"Building information objects. Object size: {object_size}. Bytes: {:?}",
@@ -394,7 +425,9 @@ impl InformationObjects {
 			| TypeId::F_FA_NA_1
 			| TypeId::F_SG_NA_1
 			| TypeId::F_DR_TA_1 => NotImplemented.fail()?,
-			TypeId::Invalid => InvalidType.fail()?,
+			_ => InformationObjects::Raw(Self::build_objects::<RawObject>(
+				type_id, sequence, num_objs, bytes,
+			)?),
 		})
 	}
 
@@ -458,6 +491,7 @@ impl InformationObjects {
 			InformationObjects::PMeNb1(objs) => objs.len(),
 			InformationObjects::PMeNc1(objs) => objs.len(),
 			InformationObjects::PAcNa1(objs) => objs.len(),
+			InformationObjects::Raw(objs) => objs.len(),
 		}
 	}
 
@@ -521,6 +555,7 @@ impl InformationObjects {
 			InformationObjects::PMeNb1(objs) => objs.is_empty(),
 			InformationObjects::PMeNc1(objs) => objs.is_empty(),
 			InformationObjects::PAcNa1(objs) => objs.is_empty(),
+			InformationObjects::Raw(objs) => objs.is_empty(),
 		}
 	}
 
@@ -583,6 +618,7 @@ impl InformationObjects {
 			InformationObjects::PMeNb1(objs) => Self::serialize_objects(objs, buffer),
 			InformationObjects::PMeNc1(objs) => Self::serialize_objects(objs, buffer),
 			InformationObjects::PAcNa1(objs) => Self::serialize_objects(objs, buffer),
+			InformationObjects::Raw(objs) => Self::serialize_objects(objs, buffer),
 		}
 	}
 }

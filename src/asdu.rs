@@ -42,35 +42,37 @@ impl Asdu {
 			*bytes.get(5).context(NotEnoughBytes)?,
 		]);
 
-		let object_size = type_id.size();
 		let remaining_bytes = bytes.get(6..).context(NotEnoughBytes)?;
-		let remaining_bytes_size = remaining_bytes.len();
+		if type_id.is_standard() {
+			let object_size = type_id.size();
+			let remaining_bytes_size = remaining_bytes.len();
 
-		// Check if the remaining bytes are a multiple of the object size
-		// If it's a sequence we need to know the first address. So the first object has
-		// object_size + 3 bytes for the address. The subsequent chunks only
-		// have the object_size.
-		let is_multiple = if sequence {
-			(remaining_bytes_size - 3) % object_size != 0
-		} else {
-			remaining_bytes_size % (object_size + 3) != 0
-		};
+			// Check if the remaining bytes are a multiple of the object size
+			// If it's a sequence we need to know the first address. So the first object has
+			// object_size + 3 bytes for the address. The subsequent chunks only
+			// have the object_size.
+			let is_multiple = if sequence {
+				(remaining_bytes_size - 3) % object_size != 0
+			} else {
+				remaining_bytes_size % (object_size + 3) != 0
+			};
 
-		// Check if the number of objects is correct
-		// Here we have the same problem as above.
-		let num_objs_expected = if sequence {
-			(remaining_bytes_size - 3) / object_size != num_objs as usize
-		} else {
-			remaining_bytes_size / (object_size + 3) != num_objs as usize
-		};
+			// Check if the number of objects is correct
+			// Here we have the same problem as above.
+			let num_objs_expected = if sequence {
+				(remaining_bytes_size - 3) / object_size != num_objs as usize
+			} else {
+				remaining_bytes_size / (object_size + 3) != num_objs as usize
+			};
 
-		if is_multiple || num_objs_expected {
-			return NumberOfObjects {
-				num_objs,
-				object_size,
-				remaining_bytes: remaining_bytes_size,
+			if is_multiple || num_objs_expected {
+				return NumberOfObjects {
+					num_objs,
+					object_size,
+					remaining_bytes: remaining_bytes_size,
+				}
+				.fail();
 			}
-			.fail();
 		}
 
 		let information_objects =
