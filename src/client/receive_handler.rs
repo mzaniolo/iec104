@@ -257,6 +257,8 @@ impl<'a> ReceiveHandler<'a> {
 					.whatever_context("Unacknowledged sequence number is empty")?
 					.1 + self.config.protocol.t1,
 			);
+		} else {
+			self.t1_i.as_mut().reset(Instant::now() + *TIMER_UNSET);
 		}
 
 		// The modulo is to avoid overflow
@@ -288,6 +290,8 @@ impl<'a> ReceiveHandler<'a> {
 					.whatever_context("Unacknowledged sequence number is empty")?
 					.1 + self.config.protocol.t1,
 			);
+		} else {
+			self.t1_i.as_mut().reset(Instant::now() + *TIMER_UNSET);
 		}
 		Ok(())
 	}
