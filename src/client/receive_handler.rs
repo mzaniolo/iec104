@@ -250,16 +250,11 @@ impl<'a> ReceiveHandler<'a> {
 			std::sync::atomic::Ordering::Relaxed,
 		);
 
-		if !self.unacknowledged_seq_num.is_empty() {
-			self.t1_i.as_mut().reset(
-				self.unacknowledged_seq_num
-					.front()
-					.whatever_context("Unacknowledged sequence number is empty")?
-					.1 + self.config.protocol.t1,
-			);
-		} else {
-			self.t1_i.as_mut().reset(Instant::now() + *TIMER_UNSET);
-		}
+		self.t1_i.as_mut().reset(
+			self.unacknowledged_seq_num
+				.front()
+				.map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1),
+		);
 
 		// The modulo is to avoid overflow
 		self.received_counter = (self.received_counter + 1) % 32768;
@@ -283,16 +278,11 @@ impl<'a> ReceiveHandler<'a> {
 			std::sync::atomic::Ordering::Relaxed,
 		);
 
-		if !self.unacknowledged_seq_num.is_empty() {
-			self.t1_i.as_mut().reset(
-				self.unacknowledged_seq_num
-					.front()
-					.whatever_context("Unacknowledged sequence number is empty")?
-					.1 + self.config.protocol.t1,
-			);
-		} else {
-			self.t1_i.as_mut().reset(Instant::now() + *TIMER_UNSET);
-		}
+		self.t1_i.as_mut().reset(
+			self.unacknowledged_seq_num
+				.front()
+				.map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1),
+		);
 		Ok(())
 	}
 
