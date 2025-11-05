@@ -148,6 +148,7 @@ impl<'a> ReceiveHandler<'a> {
 							Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
 							self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
 							self.t2.as_mut().reset(self.unacknowledged_seq_num.front().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t2);
+							self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t1);
 						}
 						ConnectionHandlerCommand::Stop => {
 							Self::send_frame(&mut self.write_connection, &STOP_DT_ACT_FRAME).await.whatever_context("Error sending stopDT activation")?;
