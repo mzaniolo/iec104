@@ -125,6 +125,10 @@ impl<'a> ReceiveHandler<'a> {
 						match apdu.frame {
 							Frame::I(i) => {
 								self.handle_receive_i_frame(&i)?;
+								let new_t2_instant = Instant::now() + self.config.protocol.t2;
+								if new_t2_instant < self.t2.deadline() {
+									self.t2.as_mut().reset(new_t2_instant);
+								}
 								self.callback.on_new_objects(i.asdu).await;
 							}
 							Frame::S(s) => {
@@ -147,7 +151,6 @@ impl<'a> ReceiveHandler<'a> {
 						ConnectionHandlerCommand::Asdu(asdu) => {
 							Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.protocol.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
 							self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.protocol.k as usize, std::sync::atomic::Ordering::Relaxed);
-							self.t2.as_mut().reset(self.unacknowledged_seq_num.front().whatever_context("Unacknowledged sequence number is empty")?.1 + self.config.protocol.t2);
 							self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.protocol.t1));
 						}
 						ConnectionHandlerCommand::Stop => {
@@ -182,14 +185,7 @@ impl<'a> ReceiveHandler<'a> {
 				tracing::debug!(
 					"Received more than w frames without acknowledgement. Sending S frame"
 				);
-				Self::send_frame(
-					&mut self.write_connection,
-					&Frame::S(SFrame { receive_sequence_number: self.received_counter }),
-				)
-				.await
-				.whatever_context("Error sending S frame")?;
-				self.unacknowledged_rcv_frames = 0;
-				self.t2.as_mut().reset(Instant::now() + self.config.protocol.t2);
+				self.confirm_all_messages().await?;
 			}
 		}
 	}
