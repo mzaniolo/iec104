@@ -41,8 +41,15 @@ tracing = "0.1.41"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
+chrono = { version = "0.4", optional = true }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["signal"] }
+
+[features]
+with-chrono = ["chrono"]
+
+default = []
 
 [lints.rust]
 dead_code = "warn"

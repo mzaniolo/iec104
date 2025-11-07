@@ -38,6 +38,55 @@ impl Cp24Time2a {
 		bytes[2] = (self.min & 0b0011_1111) | (u8::from(self.iv) << 7);
 		bytes
 	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn from_chrono<Tz: chrono::TimeZone>(dt: chrono::DateTime<Tz>) -> Self {
+		use chrono::Timelike;
+
+		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
+		// Workaround for leap seconds.
+		if ms > 59999 {
+			ms = 59999;
+		}
+		let iv = false;
+		let min = dt.minute() as u8;
+		return Self { ms, iv, min };
+	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn to_chrono_local(&self) -> Result<chrono::DateTime<chrono::Local>, ParseTimeError> {
+		use chrono::Timelike;
+
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Local::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MinutesError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?;
+		return Ok(t);
+	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
+		use chrono::Timelike;
+
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Utc::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MinutesError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?;
+		return Ok(t);
+	}
 }
 
 /// CP16Time2a time type
@@ -60,6 +109,20 @@ impl Cp16Time2a {
 	#[instrument]
 	pub fn to_bytes(self) -> [u8; 2] {
 		self.ms.to_le_bytes()
+	}
+
+	#[instrument]
+	pub fn to_duration(&self) -> tokio::time::Duration {
+		tokio::time::Duration::from_millis(self.ms as u64)
+	}
+
+	#[instrument]
+	pub fn from_duration(duration: &tokio::time::Duration) -> Result<Self, ParseTimeError> {
+		let ms = duration.as_millis();
+		if ms > 59999 {
+			return MillisecondsError.fail();
+		}
+		Ok(Self { ms: ms as u16 })
 	}
 }
 
@@ -133,13 +196,98 @@ impl Cp56Time2a {
 		bytes[6] = self.year & 0b0111_1111;
 		bytes
 	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn from_chrono_ignoring_dst<Tz: chrono::TimeZone>(
+		dt: chrono::DateTime<Tz>,
+	) -> Result<Self, ParseTimeError> {
+		use chrono::{Datelike, Timelike};
+
+		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
+		// Workaround for leap seconds.
+		if ms > 59999 {
+			ms = 59999;
+		}
+		let iv = false;
+		let min = dt.minute() as u8;
+		let summer_time = false;
+		let hour = dt.hour() as u8;
+		let weekday = dt.weekday().num_days_from_sunday() as u8;
+		let day = dt.day() as u8;
+		let month = dt.month() as u8;
+		let year = (dt.year() - 2000) as u8;
+		return Ok(Self { ms, iv, min, summer_time, hour, weekday, day, month, year });
+	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn to_chrono_local_ignoring_dst(
+		&self,
+	) -> Result<chrono::DateTime<chrono::Local>, ParseTimeError> {
+		use chrono::{Datelike, Timelike};
+
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Local::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MillisecondsError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_year(2000 + i32::from(self.year))
+			.ok_or_else(|| YearsError.build())?;
+		return Ok(t);
+	}
+
+	#[cfg(feature = "with-chrono")]
+	#[instrument]
+	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
+		use chrono::{Datelike, Timelike};
+
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Utc::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MillisecondsError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_year(2000 + i32::from(self.year))
+			.ok_or_else(|| YearsError.build())?;
+		return Ok(t);
+	}
 }
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub), context(suffix(Error)))]
 pub enum ParseTimeError {
+	#[snafu(display("Nanoseconds out of range"))]
+	Nanoseconds {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
 	#[snafu(display("Milliseconds out of range"))]
 	Milliseconds {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("Seconds out of range"))]
+	Seconds {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
