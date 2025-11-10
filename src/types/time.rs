@@ -38,10 +38,11 @@ impl Cp24Time2a {
 		bytes[2] = (self.min & 0b0011_1111) | (u8::from(self.iv) << 7);
 		bytes
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn from_chrono<Tz: chrono::TimeZone>(dt: chrono::DateTime<Tz>) -> Self {
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Cp24Time2a {
+	fn from(dt: chrono::DateTime<Tz>) -> Self {
 		use chrono::Timelike;
 
 		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
@@ -51,14 +52,20 @@ impl Cp24Time2a {
 		}
 		let iv = false;
 		let min = dt.minute() as u8;
-		return Self { ms, iv, min };
+		Self { ms, iv, min }
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn to_chrono_local(&self) -> Result<chrono::DateTime<chrono::Local>, ParseTimeError> {
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Local>> for Cp24Time2a {
+	type Error=ParseTimeError;
+
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
 		use chrono::Timelike;
 
+		if self.iv {
+			return InvalidError.fail();
+		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
 		let t = chrono::Local::now()
@@ -68,14 +75,20 @@ impl Cp24Time2a {
 			.ok_or_else(|| SecondsError.build())?
 			.with_nanosecond(u32::from(ms) * 1_000_000)
 			.ok_or_else(|| NanosecondsError.build())?;
-		return Ok(t);
+		Ok(t)
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Utc>> for Cp24Time2a {
+	type Error=ParseTimeError;
+
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
 		use chrono::Timelike;
 
+		if self.iv {
+			return InvalidError.fail();
+		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
 		let t = chrono::Utc::now()
@@ -85,7 +98,7 @@ impl Cp24Time2a {
 			.ok_or_else(|| SecondsError.build())?
 			.with_nanosecond(u32::from(ms) * 1_000_000)
 			.ok_or_else(|| NanosecondsError.build())?;
-		return Ok(t);
+		Ok(t)
 	}
 }
 
@@ -196,12 +209,12 @@ impl Cp56Time2a {
 		bytes[6] = self.year & 0b0111_1111;
 		bytes
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn from_chrono_ignoring_dst<Tz: chrono::TimeZone>(
-		dt: chrono::DateTime<Tz>,
-	) -> Result<Self, ParseTimeError> {
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Cp56Time2a {
+	/// Note: Daylight Saving Time ( DST ) is **NOT** considered!
+	fn from(dt: chrono::DateTime<Tz>) -> Self {
 		use chrono::{Datelike, Timelike};
 
 		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
@@ -217,16 +230,24 @@ impl Cp56Time2a {
 		let day = dt.day() as u8;
 		let month = dt.month() as u8;
 		let year = (dt.year() - 2000) as u8;
-		return Ok(Self { ms, iv, min, summer_time, hour, weekday, day, month, year });
+		return Self { ms, iv, min, summer_time, hour, weekday, day, month, year };
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn to_chrono_local_ignoring_dst(
-		&self,
-	) -> Result<chrono::DateTime<chrono::Local>, ParseTimeError> {
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
+	type Error=ParseTimeError;
+
+	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
 		use chrono::{Datelike, Timelike};
 
+		if self.iv {
+			return InvalidError.fail();
+		}
+		if self.summer_time {
+			return SummerTimeError.fail();
+		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
 		let t = chrono::Local::now()
@@ -244,14 +265,24 @@ impl Cp56Time2a {
 			.ok_or_else(|| MonthsError.build())?
 			.with_year(2000 + i32::from(self.year))
 			.ok_or_else(|| YearsError.build())?;
-		return Ok(t);
+		Ok(t)
 	}
+}
 
-	#[cfg(feature = "chrono")]
-	#[instrument]
-	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Utc>> for Cp56Time2a {
+	type Error=ParseTimeError;
+
+	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
 		use chrono::{Datelike, Timelike};
 
+		if self.iv {
+			return InvalidError.fail();
+		}
+		if self.summer_time {
+			return SummerTimeError.fail();
+		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
 		let t = chrono::Utc::now()
@@ -269,7 +300,7 @@ impl Cp56Time2a {
 			.ok_or_else(|| MonthsError.build())?
 			.with_year(2000 + i32::from(self.year))
 			.ok_or_else(|| YearsError.build())?;
-		return Ok(t);
+		Ok(t)
 	}
 }
 
@@ -313,6 +344,16 @@ pub enum ParseTimeError {
 	},
 	#[snafu(display("Years out of range"))]
 	Years {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("Invalid flag detected"))]
+	Invalid {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("DST conversion not supported yet"))]
+	SummerTimeError {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
