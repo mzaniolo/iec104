@@ -39,7 +39,7 @@ impl Cp24Time2a {
 		bytes
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn from_chrono<Tz: chrono::TimeZone>(dt: chrono::DateTime<Tz>) -> Self {
 		use chrono::Timelike;
@@ -54,7 +54,7 @@ impl Cp24Time2a {
 		return Self { ms, iv, min };
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn to_chrono_local(&self) -> Result<chrono::DateTime<chrono::Local>, ParseTimeError> {
 		use chrono::Timelike;
@@ -71,7 +71,7 @@ impl Cp24Time2a {
 		return Ok(t);
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
 		use chrono::Timelike;
@@ -197,7 +197,7 @@ impl Cp56Time2a {
 		bytes
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn from_chrono_ignoring_dst<Tz: chrono::TimeZone>(
 		dt: chrono::DateTime<Tz>,
@@ -220,7 +220,7 @@ impl Cp56Time2a {
 		return Ok(Self { ms, iv, min, summer_time, hour, weekday, day, month, year });
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn to_chrono_local_ignoring_dst(
 		&self,
@@ -247,7 +247,7 @@ impl Cp56Time2a {
 		return Ok(t);
 	}
 
-	#[cfg(feature = "with-chrono")]
+	#[cfg(feature = "chrono")]
 	#[instrument]
 	pub fn to_chrono_utc(&self) -> Result<chrono::DateTime<chrono::Utc>, ParseTimeError> {
 		use chrono::{Datelike, Timelike};
