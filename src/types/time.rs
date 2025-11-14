@@ -45,8 +45,8 @@ impl Cp24Time2a {
 }
 
 #[cfg(feature = "chrono")]
-impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Cp24Time2a {
-	fn from(dt: chrono::DateTime<Tz>) -> Self {
+impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp24Time2a {
+	fn from(dt: &chrono::DateTime<Tz>) -> Self {
 		use chrono::Timelike;
 
 		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
@@ -129,10 +129,10 @@ impl Cp16Time2a {
 	}
 }
 
-impl TryFrom<tokio::time::Duration> for Cp16Time2a {
+impl TryFrom<&tokio::time::Duration> for Cp16Time2a {
 	type Error=ParseTimeError;
 
-	fn try_from(duration: tokio::time::Duration) -> Result<Self, Self::Error> {
+	fn try_from(duration: &tokio::time::Duration) -> Result<Self, Self::Error> {
 		let ms = duration.as_millis();
 		if ms > 59999 {
 			return MillisecondsError.fail();
@@ -220,9 +220,9 @@ impl Cp56Time2a {
 }
 
 #[cfg(feature = "chrono")]
-impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Cp56Time2a {
+impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp56Time2a {
 	/// Note: Daylight Saving Time ( DST ) is **NOT** considered!
-	fn from(dt: chrono::DateTime<Tz>) -> Self {
+	fn from(dt: &chrono::DateTime<Tz>) -> Self {
 		use chrono::{Datelike, Timelike};
 
 		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
