@@ -1,3 +1,7 @@
+//! CPXXTime2a time types.
+//! 
+//! Note: conversions for Daylight Saving Time ( DST ) are **NOT** supported yet!
+
 use snafu::Snafu;
 use tracing::instrument;
 
@@ -40,6 +44,68 @@ impl Cp24Time2a {
 	}
 }
 
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp24Time2a {
+	fn from(dt: &chrono::DateTime<Tz>) -> Self {
+		use chrono::Timelike;
+
+		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
+		// Workaround for leap seconds.
+		if ms > 59999 {
+			ms = 59999;
+		}
+		let iv = false;
+		let min = dt.minute() as u8;
+		Self { ms, iv, min }
+	}
+}
+
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Local>> for Cp24Time2a {
+	type Error=ParseTimeError;
+
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
+		use chrono::Timelike;
+
+		if self.iv {
+			return InvalidError.fail();
+		}
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Local::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MinutesError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?;
+		Ok(t)
+	}
+}
+
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Utc>> for Cp24Time2a {
+	type Error=ParseTimeError;
+
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
+		use chrono::Timelike;
+
+		if self.iv {
+			return InvalidError.fail();
+		}
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Utc::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MinutesError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?;
+		Ok(t)
+	}
+}
+
 /// CP16Time2a time type
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub struct Cp16Time2a {
@@ -60,6 +126,24 @@ impl Cp16Time2a {
 	#[instrument]
 	pub fn to_bytes(self) -> [u8; 2] {
 		self.ms.to_le_bytes()
+	}
+}
+
+impl TryFrom<&tokio::time::Duration> for Cp16Time2a {
+	type Error=ParseTimeError;
+
+	fn try_from(duration: &tokio::time::Duration) -> Result<Self, Self::Error> {
+		let ms = duration.as_millis();
+		if ms > 59999 {
+			return MillisecondsError.fail();
+		}
+		Ok(Self { ms: ms as u16 })
+	}
+}
+
+impl Into<tokio::time::Duration> for Cp16Time2a {
+	fn into(self) -> tokio::time::Duration {
+		tokio::time::Duration::from_millis(self.ms as u64)
 	}
 }
 
@@ -135,11 +219,114 @@ impl Cp56Time2a {
 	}
 }
 
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp56Time2a {
+	/// Note: Daylight Saving Time ( DST ) is **NOT** considered!
+	fn from(dt: &chrono::DateTime<Tz>) -> Self {
+		use chrono::{Datelike, Timelike};
+
+		let mut ms = (dt.timestamp_subsec_millis() + dt.second() * 1000) as u16;
+		// Workaround for leap seconds.
+		if ms > 59999 {
+			ms = 59999;
+		}
+		let iv = false;
+		let min = dt.minute() as u8;
+		let summer_time = false;
+		let hour = dt.hour() as u8;
+		let weekday = dt.weekday().num_days_from_sunday() as u8;
+		let day = dt.day() as u8;
+		let month = dt.month() as u8;
+		let year = (dt.year() - 2000) as u8;
+		return Self { ms, iv, min, summer_time, hour, weekday, day, month, year };
+	}
+}
+
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
+	type Error=ParseTimeError;
+
+	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
+		use chrono::{Datelike, Timelike};
+
+		if self.iv {
+			return InvalidError.fail();
+		}
+		if self.summer_time {
+			return SummerTimeError.fail();
+		}
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Local::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MillisecondsError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_year(2000 + i32::from(self.year))
+			.ok_or_else(|| YearsError.build())?;
+		Ok(t)
+	}
+}
+
+#[cfg(feature = "chrono")]
+impl TryInto<chrono::DateTime<chrono::Utc>> for Cp56Time2a {
+	type Error=ParseTimeError;
+
+	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
+	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
+		use chrono::{Datelike, Timelike};
+
+		if self.iv {
+			return InvalidError.fail();
+		}
+		if self.summer_time {
+			return SummerTimeError.fail();
+		}
+		let seconds = self.ms / 1000;
+		let ms = self.ms % 1000;
+		let t = chrono::Utc::now()
+			.with_minute(u32::from(self.min))
+			.ok_or_else(|| MillisecondsError.build())?
+			.with_second(seconds.into())
+			.ok_or_else(|| SecondsError.build())?
+			.with_nanosecond(u32::from(ms) * 1_000_000)
+			.ok_or_else(|| NanosecondsError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_year(2000 + i32::from(self.year))
+			.ok_or_else(|| YearsError.build())?;
+		Ok(t)
+	}
+}
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub), context(suffix(Error)))]
 pub enum ParseTimeError {
+	#[snafu(display("Nanoseconds out of range"))]
+	Nanoseconds {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
 	#[snafu(display("Milliseconds out of range"))]
 	Milliseconds {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("Seconds out of range"))]
+	Seconds {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
@@ -165,6 +352,16 @@ pub enum ParseTimeError {
 	},
 	#[snafu(display("Years out of range"))]
 	Years {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("Invalid flag detected"))]
+	Invalid {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("DST conversion not supported yet"))]
+	SummerTimeError {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
