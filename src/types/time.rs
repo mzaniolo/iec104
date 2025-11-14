@@ -123,19 +123,23 @@ impl Cp16Time2a {
 	pub fn to_bytes(self) -> [u8; 2] {
 		self.ms.to_le_bytes()
 	}
+}
 
-	#[instrument]
-	pub fn to_duration(&self) -> tokio::time::Duration {
-		tokio::time::Duration::from_millis(self.ms as u64)
-	}
+impl TryFrom<tokio::time::Duration> for Cp16Time2a {
+	type Error=ParseTimeError;
 
-	#[instrument]
-	pub fn from_duration(duration: &tokio::time::Duration) -> Result<Self, ParseTimeError> {
+	fn try_from(duration: tokio::time::Duration) -> Result<Self, Self::Error> {
 		let ms = duration.as_millis();
 		if ms > 59999 {
 			return MillisecondsError.fail();
 		}
 		Ok(Self { ms: ms as u16 })
+	}
+}
+
+impl Into<tokio::time::Duration> for Cp16Time2a {
+	fn into(self) -> tokio::time::Duration {
+		tokio::time::Duration::from_millis(self.ms as u64)
 	}
 }
 
