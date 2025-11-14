@@ -1,3 +1,7 @@
+//! CPXXTime2a time types.
+//! 
+//! Note: conversions for Daylight Saving Time ( DST ) are **NOT** supported yet!
+
 use snafu::Snafu;
 use tracing::instrument;
 
