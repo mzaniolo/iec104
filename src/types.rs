@@ -200,7 +200,7 @@ impl InformationObjects {
 					// have the object_size.
 					// Since the i starts at 0, we need to add 1 to the address.
 					let address = first_addr + (i as u32) + 1;
-					let object = T::from_bytes(&chunk[ADDRESS_SIZE..])?;
+					let object = T::from_bytes(chunk)?;
 					Ok(GenericObject { address, object })
 				})
 				.collect::<Result<Vec<_>, ParseError>>()?;
