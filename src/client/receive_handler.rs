@@ -16,7 +16,7 @@ use tokio::{
 use tracing::instrument;
 
 use crate::{
-	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAN_HEADER, UFrame},
+	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAM_HEADER, UFrame},
 	asdu::Asdu,
 	client::{
 		Connection, OnNewObjects, START_DT_CON_FRAME, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME,
@@ -98,7 +98,7 @@ impl<'a> ReceiveHandler<'a> {
 		buffer: &mut [u8; 255],
 	) -> Result<Apdu, Error> {
 		connection.read(&mut buffer[0..2]).await.whatever_context("Error receiving data")?;
-		if buffer[0] != TELEGRAN_HEADER {
+		if buffer[0] != TELEGRAM_HEADER {
 			whatever!("Invalid starter byte: {:02x}{:02x}", buffer[0], buffer[1]);
 		}
 		let length = buffer[1] as usize;
@@ -120,7 +120,7 @@ impl<'a> ReceiveHandler<'a> {
 		let mut next_start_i = 0;
 		let mut i = 0;
 		while i < cache.len() - 1 {
-			if cache[i] == TELEGRAN_HEADER {
+			if cache[i] == TELEGRAM_HEADER {
 				let length = cache[i + 1] as usize;
 				if length > APUD_MAX_LENGTH as usize {
 					whatever!("Invalid length: {}", length);
