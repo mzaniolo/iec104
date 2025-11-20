@@ -112,38 +112,81 @@ impl<'a> ReceiveHandler<'a> {
 		Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 	}
 
+	fn parse_apdus(cache:&mut Vec<u8>)->Result<Vec<Apdu>, Error> {
+		if cache.len() < 2 {
+			return Ok(Vec::new());
+		}
+		let mut apdus = Vec::new();
+		let mut next_start_i = 0;
+		let mut i = 0;
+		while i < cache.len() - 1 {
+			if cache[i] == TELEGRAN_HEADER {
+				let length = cache[i + 1] as usize;
+				if length > APUD_MAX_LENGTH as usize {
+					whatever!("Invalid length: {}", length);
+				}
+				if cache.len() < length + i + 2 {
+					break;
+				} else {
+					apdus.push(
+						Apdu::from_bytes(&cache[i..i + length + 2])
+							.whatever_context("Error decoding APDU")?,
+					);
+					i += length + 2;
+					next_start_i = i;
+					continue;
+				}
+			}else{
+				whatever!("Invalid starter byte: {:02x}{:02x}", cache[i], cache[i+1]);
+			}
+		}
+		if next_start_i >= cache.len() {
+			cache.clear();
+		} else if next_start_i > 0 {
+			*cache = cache.split_off(next_start_i);
+		}
+		return Ok(apdus);
+	}
+
 	#[instrument(level = "debug", skip_all)]
 	pub async fn receive_task(mut self) -> Result<(), Error> {
 		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
+		let mut cache = Vec::new();
 		let mut buffer = [0; 255];
 
 		loop {
 			select! {
-				apdu = Self::receive_apdu(&mut self.read_connection,	&mut buffer) => {
-					if let Ok(apdu) = apdu {
-						match apdu.frame {
-							Frame::I(i) => {
-								self.handle_receive_i_frame(&i)?;
-								let new_t2_instant = Instant::now() + self.config.protocol.t2;
-								if new_t2_instant < self.t2.deadline() {
-									self.t2.as_mut().reset(new_t2_instant);
+				res = self.read_connection.read(&mut buffer)=>{
+					let len = res.whatever_context("Error receiving data")?;
+					if len == 0 {
+						whatever!("Connection closed");
+					}
+					cache.extend_from_slice(&buffer[0..len]);
+					let apdus = Self::parse_apdus(&mut cache)?;
+					if !apdus.is_empty() {
+						for apdu in apdus {
+							match apdu.frame {
+								Frame::I(i) => {
+									self.handle_receive_i_frame(&i)?;
+									let new_t2_instant = Instant::now() + self.config.protocol.t2;
+									if new_t2_instant < self.t2.deadline() {
+										self.t2.as_mut().reset(new_t2_instant);
+									}
+									self.callback.on_new_objects(i.asdu).await;
 								}
-								self.callback.on_new_objects(i.asdu).await;
-							}
-							Frame::S(s) => {
-								self.handle_receive_s_frame(&s)?;
-							}
-							Frame::U(u) => {
-								let should_stop = self.handle_receive_u_frame(&u).await?;
-								if should_stop {
-									return Ok(());
+								Frame::S(s) => {
+									self.handle_receive_s_frame(&s)?;
+								}
+								Frame::U(u) => {
+									let should_stop = self.handle_receive_u_frame(&u).await?;
+									if should_stop {
+										return Ok(());
+									}
 								}
 							}
 						}
 						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
-					} else {
-						whatever!("Error receiving APDU");
 					}
 				}
 				Some(cmd) = self.rx.recv() => {
