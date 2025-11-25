@@ -49,4 +49,4 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         shell: bash
-        run: cargo nextest --profile ci --workspace
+        run: cargo nextest --profile ci run --workspace

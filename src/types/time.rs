@@ -1,6 +1,7 @@
 //! CPXXTime2a time types.
-//! 
-//! Note: conversions for Daylight Saving Time ( DST ) are **NOT** supported yet!
+//!
+//! Note: conversions for Daylight Saving Time ( DST ) are **NOT** supported
+//! yet!
 
 use snafu::Snafu;
 use tracing::instrument;
@@ -62,7 +63,7 @@ impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp24Time2a {
 
 #[cfg(feature = "chrono")]
 impl TryInto<chrono::DateTime<chrono::Local>> for Cp24Time2a {
-	type Error=ParseTimeError;
+	type Error = ParseTimeError;
 
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
 		use chrono::Timelike;
@@ -85,7 +86,7 @@ impl TryInto<chrono::DateTime<chrono::Local>> for Cp24Time2a {
 
 #[cfg(feature = "chrono")]
 impl TryInto<chrono::DateTime<chrono::Utc>> for Cp24Time2a {
-	type Error=ParseTimeError;
+	type Error = ParseTimeError;
 
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
 		use chrono::Timelike;
@@ -130,7 +131,7 @@ impl Cp16Time2a {
 }
 
 impl TryFrom<&tokio::time::Duration> for Cp16Time2a {
-	type Error=ParseTimeError;
+	type Error = ParseTimeError;
 
 	fn try_from(duration: &tokio::time::Duration) -> Result<Self, Self::Error> {
 		let ms = duration.as_millis();
@@ -141,9 +142,9 @@ impl TryFrom<&tokio::time::Duration> for Cp16Time2a {
 	}
 }
 
-impl Into<tokio::time::Duration> for Cp16Time2a {
-	fn into(self) -> tokio::time::Duration {
-		tokio::time::Duration::from_millis(self.ms as u64)
+impl From<Cp16Time2a> for tokio::time::Duration {
+	fn from(val: Cp16Time2a) -> Self {
+		tokio::time::Duration::from_millis(u64::from(val.ms))
 	}
 }
 
@@ -238,13 +239,13 @@ impl<Tz: chrono::TimeZone> From<&chrono::DateTime<Tz>> for Cp56Time2a {
 		let day = dt.day() as u8;
 		let month = dt.month() as u8;
 		let year = (dt.year() - 2000) as u8;
-		return Self { ms, iv, min, summer_time, hour, weekday, day, month, year };
+		Self { ms, iv, min, summer_time, hour, weekday, day, month, year }
 	}
 }
 
 #[cfg(feature = "chrono")]
 impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
-	type Error=ParseTimeError;
+	type Error = ParseTimeError;
 
 	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
@@ -279,7 +280,7 @@ impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
 
 #[cfg(feature = "chrono")]
 impl TryInto<chrono::DateTime<chrono::Utc>> for Cp56Time2a {
-	type Error=ParseTimeError;
+	type Error = ParseTimeError;
 
 	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
