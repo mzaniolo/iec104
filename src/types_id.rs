@@ -325,6 +325,7 @@ pub enum TypeId {
 	ASDU_TYPE_255 = 255,
 }
 
+#[allow(clippy::too_many_lines)]
 impl From<u8> for TypeId {
 	fn from(value: u8) -> Self {
 		match value {
@@ -663,72 +664,72 @@ impl TypeId {
 	/// Returns `true` if the type is standard, returns `false` if it is custom.
 	#[must_use]
 	pub const fn is_standard(self) -> bool {
-		match self {
+		matches!(
+			self,
 			TypeId::M_SP_NA_1
-			| TypeId::M_SP_TA_1
-			| TypeId::M_DP_NA_1
-			| TypeId::M_DP_TA_1
-			| TypeId::M_ST_NA_1
-			| TypeId::M_ST_TA_1
-			| TypeId::M_BO_NA_1
-			| TypeId::M_ME_NA_1
-			| TypeId::M_ME_TA_1
-			| TypeId::M_ME_NB_1
-			| TypeId::M_ME_TB_1
-			| TypeId::M_ME_NC_1
-			| TypeId::M_ME_TC_1
-			| TypeId::M_IT_NA_1
-			| TypeId::M_EP_TA_1
-			| TypeId::M_EP_TB_1
-			| TypeId::M_EP_TC_1
-			| TypeId::M_PS_NA_1
-			| TypeId::M_ME_ND_1
-			| TypeId::M_SP_TB_1
-			| TypeId::M_DP_TB_1
-			| TypeId::M_ST_TB_1
-			| TypeId::M_BO_TB_1
-			| TypeId::M_ME_TD_1
-			| TypeId::M_ME_TE_1
-			| TypeId::M_ME_TF_1
-			| TypeId::M_IT_TB_1
-			| TypeId::M_EP_TD_1
-			| TypeId::M_EP_TE_1
-			| TypeId::M_EP_TF_1
-			| TypeId::C_SC_NA_1
-			| TypeId::C_DC_NA_1
-			| TypeId::C_RC_NA_1
-			| TypeId::C_SE_NA_1
-			| TypeId::C_SE_NB_1
-			| TypeId::C_SE_NC_1
-			| TypeId::C_BO_NA_1
-			| TypeId::C_SC_TA_1
-			| TypeId::C_DC_TA_1
-			| TypeId::C_RC_TA_1
-			| TypeId::C_SE_TA_1
-			| TypeId::C_SE_TB_1
-			| TypeId::C_SE_TC_1
-			| TypeId::C_BO_TA_1
-			| TypeId::M_EI_NA_1
-			| TypeId::C_IC_NA_1
-			| TypeId::C_CI_NA_1
-			| TypeId::C_RD_NA_1
-			| TypeId::C_CS_NA_1
-			| TypeId::C_TS_NA_1
-			| TypeId::C_RP_NA_1
-			| TypeId::C_CD_NA_1
-			| TypeId::C_TS_TA_1
-			| TypeId::P_ME_NA_1
-			| TypeId::P_ME_NB_1
-			| TypeId::P_ME_NC_1
-			| TypeId::P_AC_NA_1
-			| TypeId::F_FR_NA_1
-			| TypeId::F_SR_NA_1
-			| TypeId::F_SC_NA_1
-			| TypeId::F_LS_NA_1
-			| TypeId::F_FA_NA_1
-			| TypeId::F_SG_NA_1
-			| TypeId::F_DR_TA_1 => true,
-			_ => false,
-		}
+				| TypeId::M_SP_TA_1
+				| TypeId::M_DP_NA_1
+				| TypeId::M_DP_TA_1
+				| TypeId::M_ST_NA_1
+				| TypeId::M_ST_TA_1
+				| TypeId::M_BO_NA_1
+				| TypeId::M_ME_NA_1
+				| TypeId::M_ME_TA_1
+				| TypeId::M_ME_NB_1
+				| TypeId::M_ME_TB_1
+				| TypeId::M_ME_NC_1
+				| TypeId::M_ME_TC_1
+				| TypeId::M_IT_NA_1
+				| TypeId::M_EP_TA_1
+				| TypeId::M_EP_TB_1
+				| TypeId::M_EP_TC_1
+				| TypeId::M_PS_NA_1
+				| TypeId::M_ME_ND_1
+				| TypeId::M_SP_TB_1
+				| TypeId::M_DP_TB_1
+				| TypeId::M_ST_TB_1
+				| TypeId::M_BO_TB_1
+				| TypeId::M_ME_TD_1
+				| TypeId::M_ME_TE_1
+				| TypeId::M_ME_TF_1
+				| TypeId::M_IT_TB_1
+				| TypeId::M_EP_TD_1
+				| TypeId::M_EP_TE_1
+				| TypeId::M_EP_TF_1
+				| TypeId::C_SC_NA_1
+				| TypeId::C_DC_NA_1
+				| TypeId::C_RC_NA_1
+				| TypeId::C_SE_NA_1
+				| TypeId::C_SE_NB_1
+				| TypeId::C_SE_NC_1
+				| TypeId::C_BO_NA_1
+				| TypeId::C_SC_TA_1
+				| TypeId::C_DC_TA_1
+				| TypeId::C_RC_TA_1
+				| TypeId::C_SE_TA_1
+				| TypeId::C_SE_TB_1
+				| TypeId::C_SE_TC_1
+				| TypeId::C_BO_TA_1
+				| TypeId::M_EI_NA_1
+				| TypeId::C_IC_NA_1
+				| TypeId::C_CI_NA_1
+				| TypeId::C_RD_NA_1
+				| TypeId::C_CS_NA_1
+				| TypeId::C_TS_NA_1
+				| TypeId::C_RP_NA_1
+				| TypeId::C_CD_NA_1
+				| TypeId::C_TS_TA_1
+				| TypeId::P_ME_NA_1
+				| TypeId::P_ME_NB_1
+				| TypeId::P_ME_NC_1
+				| TypeId::P_AC_NA_1
+				| TypeId::F_FR_NA_1
+				| TypeId::F_SR_NA_1
+				| TypeId::F_SC_NA_1
+				| TypeId::F_LS_NA_1
+				| TypeId::F_FA_NA_1
+				| TypeId::F_SG_NA_1
+				| TypeId::F_DR_TA_1
+		)
 	}
 }
