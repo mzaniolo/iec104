@@ -134,7 +134,6 @@ impl<'a> ReceiveHandler<'a> {
 					);
 					i += length + 2;
 					next_start_i = i;
-					continue;
 				}
 			}else{
 				whatever!("Invalid starter byte: {:02x}{:02x}", cache[i], cache[i+1]);
@@ -145,7 +144,7 @@ impl<'a> ReceiveHandler<'a> {
 		} else if next_start_i > 0 {
 			*cache = cache.split_off(next_start_i);
 		}
-		return Ok(apdus);
+		Ok(apdus)
 	}
 
 	#[instrument(level = "debug", skip_all)]
