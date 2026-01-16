@@ -6,7 +6,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use snafu::{ResultExt as _, whatever};
+use snafu::{FromString, ResultExt as _, whatever};
 use tokio::{
 	io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, ReadHalf, WriteHalf},
 	select,
@@ -112,31 +112,46 @@ impl<'a> ReceiveHandler<'a> {
 		Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 	}
 
-	fn parse_apdus(cache:&mut Vec<u8>)->Result<Vec<Apdu>, Error> {
+	fn parse_apdus(cache: &mut Vec<u8>) -> (Vec<Apdu>, Option<Error>) {
 		if cache.len() < 2 {
-			return Ok(Vec::new());
+			return (Vec::new(), None);
 		}
 		let mut apdus = Vec::new();
 		let mut next_start_i = 0;
 		let mut i = 0;
+		let mut err = None;
 		while i < cache.len() - 1 {
 			if cache[i] == TELEGRAM_HEADER {
 				let length = cache[i + 1] as usize;
 				if length > APUD_MAX_LENGTH as usize {
-					whatever!("Invalid length: {}", length);
+					err = Some(Error::without_source(format!("Invalid length: {length}")));
+					break;
 				}
 				if cache.len() < length + i + 2 {
 					break;
 				} else {
-					apdus.push(
-						Apdu::from_bytes(&cache[i..i + length + 2])
-							.whatever_context("Error decoding APDU")?,
-					);
-					i += length + 2;
-					next_start_i = i;
+					match Apdu::from_bytes(&cache[i..i + length + 2]) {
+						Ok(apdu) => {
+							apdus.push(apdu);
+							i += length + 2;
+							next_start_i = i;
+						}
+						Err(e) => {
+							err = Some(Error::with_source(
+								Box::new(e),
+								"Error decoding APDU".to_owned(),
+							));
+							break;
+						}
+					}
 				}
-			}else{
-				whatever!("Invalid starter byte: {:02x}{:02x}", cache[i], cache[i+1]);
+			} else {
+				err = Some(Error::without_source(format!(
+					"Invalid starter byte: {:02x}{:02x}",
+					cache[i],
+					cache[i + 1]
+				)));
+				break;
 			}
 		}
 		if next_start_i >= cache.len() {
@@ -144,7 +159,7 @@ impl<'a> ReceiveHandler<'a> {
 		} else if next_start_i > 0 {
 			*cache = cache.split_off(next_start_i);
 		}
-		Ok(apdus)
+		(apdus, err)
 	}
 
 	#[instrument(level = "debug", skip_all)]
@@ -162,7 +177,7 @@ impl<'a> ReceiveHandler<'a> {
 						whatever!("Connection closed");
 					}
 					cache.extend_from_slice(&buffer[0..len]);
-					let apdus = Self::parse_apdus(&mut cache)?;
+					let (apdus, err) = Self::parse_apdus(&mut cache);
 					if !apdus.is_empty() {
 						for apdu in apdus {
 							match apdu.frame {
@@ -186,6 +201,9 @@ impl<'a> ReceiveHandler<'a> {
 							}
 						}
 						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
+					}
+					if let Some(e) = err {
+						return Err(e);
 					}
 				}
 				Some(cmd) = self.rx.recv() => {
