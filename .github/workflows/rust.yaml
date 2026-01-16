@@ -1,0 +1,52 @@
+name: Rust
+
+# Trigger the CI on any tags, pushes to any branch and PRs to any branch.
+on:
+  push:
+    branches: ["main"]
+    tags: ["*"]
+  pull_request:
+    branches: ["*"]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+# Make sure there is no pipeline running uselessly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lints:
+    runs-on: ubuntu-latest
+    container: ghcr.io/mzaniolo/rust:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rustfmt
+        shell: bash
+        run: cargo +nightly fmt -- --check
+
+      - name: Clippy
+        shell: bash
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Udeps
+        shell: bash
+        run: cargo +nightly udeps
+
+      - name: Typos
+        uses: crate-ci/typos@v1.39.2
+
+  tests:
+    runs-on: ubuntu-latest
+    container: ghcr.io/mzaniolo/rust:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        shell: bash
+        run: cargo nextest --profile ci run --workspace

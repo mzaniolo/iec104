@@ -6,7 +6,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use snafu::{OptionExt as _, ResultExt as _, whatever};
+use snafu::{ResultExt as _, whatever};
 use tokio::{
 	io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, ReadHalf, WriteHalf},
 	select,
