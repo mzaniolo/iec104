@@ -6,7 +6,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use snafu::{FromString, ResultExt as _, whatever};
+use snafu::{OptionExt as _, ResultExt as _, whatever};
 use tokio::{
 	io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, ReadHalf, WriteHalf},
 	select,
@@ -112,61 +112,30 @@ impl<'a> ReceiveHandler<'a> {
 		Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 	}
 
-	fn parse_apdus(cache: &mut Vec<u8>) -> (Vec<Apdu>, Option<Error>) {
-		if cache.len() < 2 {
-			return (Vec::new(), None);
+	/// Tries to parse an APDU from the reading buffer. If the buffer don't have
+	/// the full APDU bytes Ok(None) is returned
+	#[instrument(level = "debug")]
+	fn try_parse_apdu(reading_buffer: &mut VecDeque<u8>) -> Result<Option<Apdu>, Error> {
+		if reading_buffer.front().is_none_or(|&b| b != TELEGRAM_HEADER) {
+			whatever!("Invalid header");
 		}
-		let mut apdus = Vec::new();
-		let mut next_start_i = 0;
-		let mut i = 0;
-		let mut err = None;
-		while i < cache.len() - 1 {
-			if cache[i] == TELEGRAM_HEADER {
-				let length = cache[i + 1] as usize;
-				if length > APUD_MAX_LENGTH as usize {
-					err = Some(Error::without_source(format!("Invalid length: {length}")));
-					break;
-				}
-				if cache.len() < length + i + 2 {
-					break;
-				} else {
-					match Apdu::from_bytes(&cache[i..i + length + 2]) {
-						Ok(apdu) => {
-							apdus.push(apdu);
-							i += length + 2;
-							next_start_i = i;
-						}
-						Err(e) => {
-							err = Some(Error::with_source(
-								Box::new(e),
-								"Error decoding APDU".to_owned(),
-							));
-							break;
-						}
-					}
-				}
-			} else {
-				err = Some(Error::without_source(format!(
-					"Invalid starter byte: {:02x}{:02x}",
-					cache[i],
-					cache[i + 1]
-				)));
-				break;
-			}
+		let length = reading_buffer.get(1).whatever_context("Error getting length")?;
+		if *length > APUD_MAX_LENGTH {
+			whatever!("Invalid length: {length}");
 		}
-		if next_start_i >= cache.len() {
-			cache.clear();
-		} else if next_start_i > 0 {
-			*cache = cache.split_off(next_start_i);
+		if reading_buffer.len() >= (length + 2) as usize {
+			let apdu_bytes: Vec<u8> = reading_buffer.drain(0..(length + 2) as usize).collect();
+			Apdu::from_bytes(&apdu_bytes).map(Some)
+		} else {
+			Ok(None)
 		}
-		(apdus, err)
 	}
 
 	#[instrument(level = "debug", skip_all)]
 	pub async fn receive_task(mut self) -> Result<(), Error> {
 		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
-		let mut cache = Vec::new();
+		let mut reading_buffer: VecDeque<u8> = VecDeque::with_capacity(512);
 		let mut buffer = [0; 255];
 
 		loop {
@@ -176,34 +145,34 @@ impl<'a> ReceiveHandler<'a> {
 					if len == 0 {
 						whatever!("Connection closed");
 					}
-					cache.extend_from_slice(&buffer[0..len]);
-					let (apdus, err) = Self::parse_apdus(&mut cache);
-					if !apdus.is_empty() {
-						for apdu in apdus {
-							match apdu.frame {
-								Frame::I(i) => {
-									self.handle_receive_i_frame(&i)?;
-									let new_t2_instant = Instant::now() + self.config.protocol.t2;
-									if new_t2_instant < self.t2.deadline() {
-										self.t2.as_mut().reset(new_t2_instant);
-									}
-									self.callback.on_new_objects(i.asdu).await;
+					reading_buffer.extend(buffer[0..len].iter());
+					let mut reset_t3 = false;
+
+					while reading_buffer.len() > 2 && let Some(apdu) = Self::try_parse_apdu(&mut reading_buffer).whatever_context("Error parsing APDU")? {
+						match apdu.frame {
+							Frame::I(i) => {
+								self.handle_receive_i_frame(&i)?;
+								let new_t2_instant = Instant::now() + self.config.protocol.t2;
+								if new_t2_instant < self.t2.deadline() {
+									self.t2.as_mut().reset(new_t2_instant);
 								}
-								Frame::S(s) => {
-									self.handle_receive_s_frame(&s)?;
-								}
-								Frame::U(u) => {
-									let should_stop = self.handle_receive_u_frame(&u).await?;
-									if should_stop {
-										return Ok(());
-									}
+								self.callback.on_new_objects(i.asdu).await;
+							}
+							Frame::S(s) => {
+								self.handle_receive_s_frame(&s)?;
+							}
+							Frame::U(u) => {
+								let should_stop = self.handle_receive_u_frame(&u).await?;
+								if should_stop {
+									return Ok(());
 								}
 							}
 						}
-						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
+						reset_t3 = true;
 					}
-					if let Some(e) = err {
-						return Err(e);
+
+					if reset_t3{
+						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 					}
 				}
 				Some(cmd) = self.rx.recv() => {
