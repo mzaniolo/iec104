@@ -6,7 +6,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use snafu::{ResultExt as _, whatever};
+use snafu::{OptionExt as _, ResultExt as _, whatever};
 use tokio::{
 	io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, ReadHalf, WriteHalf},
 	select,
@@ -16,7 +16,7 @@ use tokio::{
 use tracing::instrument;
 
 use crate::{
-	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAN_HEADER, UFrame},
+	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAM_HEADER, UFrame},
 	asdu::Asdu,
 	client::{
 		Connection, OnNewObjects, START_DT_CON_FRAME, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME,
@@ -98,7 +98,7 @@ impl<'a> ReceiveHandler<'a> {
 		buffer: &mut [u8; 255],
 	) -> Result<Apdu, Error> {
 		connection.read(&mut buffer[0..2]).await.whatever_context("Error receiving data")?;
-		if buffer[0] != TELEGRAN_HEADER {
+		if buffer[0] != TELEGRAM_HEADER {
 			whatever!("Invalid starter byte: {:02x}{:02x}", buffer[0], buffer[1]);
 		}
 		let length = buffer[1] as usize;
@@ -112,16 +112,43 @@ impl<'a> ReceiveHandler<'a> {
 		Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 	}
 
+	/// Tries to parse an APDU from the reading buffer. If the buffer don't have
+	/// the full APDU bytes Ok(None) is returned
+	#[instrument(level = "debug")]
+	fn try_parse_apdu(reading_buffer: &mut VecDeque<u8>) -> Result<Option<Apdu>, Error> {
+		if reading_buffer.front().is_none_or(|&b| b != TELEGRAM_HEADER) {
+			whatever!("Invalid header");
+		}
+		let length = reading_buffer.get(1).whatever_context("Error getting length")?;
+		if *length > APUD_MAX_LENGTH {
+			whatever!("Invalid length: {length}");
+		}
+		if reading_buffer.len() >= (length + 2) as usize {
+			let apdu_bytes: Vec<u8> = reading_buffer.drain(0..(length + 2) as usize).collect();
+			Apdu::from_bytes(&apdu_bytes).map(Some)
+		} else {
+			Ok(None)
+		}
+	}
+
 	#[instrument(level = "debug", skip_all)]
 	pub async fn receive_task(mut self) -> Result<(), Error> {
 		self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
 
+		let mut reading_buffer: VecDeque<u8> = VecDeque::with_capacity(512);
 		let mut buffer = [0; 255];
 
 		loop {
 			select! {
-				apdu = Self::receive_apdu(&mut self.read_connection,	&mut buffer) => {
-					if let Ok(apdu) = apdu {
+				res = self.read_connection.read(&mut buffer)=>{
+					let len = res.whatever_context("Error receiving data")?;
+					if len == 0 {
+						whatever!("Connection closed");
+					}
+					reading_buffer.extend(buffer[0..len].iter());
+					let mut reset_t3 = false;
+
+					while reading_buffer.len() > 2 && let Some(apdu) = Self::try_parse_apdu(&mut reading_buffer).whatever_context("Error parsing APDU")? {
 						match apdu.frame {
 							Frame::I(i) => {
 								self.handle_receive_i_frame(&i)?;
@@ -141,9 +168,11 @@ impl<'a> ReceiveHandler<'a> {
 								}
 							}
 						}
+						reset_t3 = true;
+					}
+
+					if reset_t3{
 						self.t3.as_mut().reset(Instant::now() + self.config.protocol.t3);
-					} else {
-						whatever!("Error receiving APDU");
 					}
 				}
 				Some(cmd) = self.rx.recv() => {

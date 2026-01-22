@@ -6,7 +6,7 @@ use crate::{
 	error::{self, Error, InvalidAsdu, NotEnoughBytes, SizedSlice},
 };
 
-pub(crate) const TELEGRAN_HEADER: u8 = 0x68;
+pub(crate) const TELEGRAM_HEADER: u8 = 0x68;
 pub(crate) const APUD_MAX_LENGTH: u8 = 253;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +22,7 @@ impl Apdu {
 		if data.len() < 6 {
 			return error::ApduTooShort.fail();
 		}
-		if data[0] != TELEGRAN_HEADER {
+		if data[0] != TELEGRAM_HEADER {
 			return error::InvalidTelegramHeader.fail();
 		}
 
@@ -46,7 +46,7 @@ impl Apdu {
 		// The total length of the APDU is the length of the frame plus 2 bytes, one for
 		// the header and one for the length
 		let mut bytes = Vec::with_capacity(self.length as usize + 2);
-		bytes.push(TELEGRAN_HEADER);
+		bytes.push(TELEGRAM_HEADER);
 		bytes.push(self.length);
 		self.frame.to_bytes(&mut bytes)?;
 		Ok(bytes)
@@ -82,7 +82,7 @@ impl Frame {
 	}
 	pub fn to_apdu_bytes(&self) -> Result<Vec<u8>, Error> {
 		let mut buffer = Vec::new();
-		buffer.push(TELEGRAN_HEADER);
+		buffer.push(TELEGRAM_HEADER);
 		buffer.push(0); // length placeholder
 		self.to_bytes(&mut buffer)?;
 		buffer[1] = (buffer.len() - 2) as u8; // update length
