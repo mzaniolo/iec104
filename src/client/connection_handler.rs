@@ -14,11 +14,12 @@ use tokio_native_tls::{
 use tracing::instrument;
 
 use crate::{
+	START_DT_ACT_FRAME,
 	apdu::Frame,
-	asdu::Asdu,
-	client::{Connection, OnNewObjects, START_DT_ACT_FRAME, receive_handler::ReceiveHandler},
+	client::{ClientCallback, Connection, InnerClientCallback},
 	config::{ClientConfig, TlsClientConfig},
 	error::Error,
+	receive_handler::{ReceiveHandler, ReceiveHandlerCommand, receive_apdu, send_frame},
 };
 
 #[atomic_enum]
@@ -30,29 +31,21 @@ pub enum ConnectionHandlerState {
 	Reconnecting,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConnectionHandlerCommand {
-	Start,
-	Stop,
-	Test,
-	Asdu(Asdu),
-}
-
-pub struct ConnectionHandler {
+pub struct ConnectionHandler<C: ClientCallback + Send + Sync + 'static> {
 	read_connection: ReadHalf<Connection>,
 	write_connection: WriteHalf<Connection>,
-	callback: Arc<dyn OnNewObjects + Send + Sync>,
+	callback: Arc<InnerClientCallback<C>>,
 	config: ClientConfig,
 	state: Arc<AtomicConnectionHandlerState>,
-	rx: mpsc::Receiver<ConnectionHandlerCommand>,
+	rx: mpsc::Receiver<ReceiveHandlerCommand>,
 	out_buffer_full: Arc<AtomicBool>,
 }
 
-impl ConnectionHandler {
+impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 	pub async fn new(
-		callback: Arc<dyn OnNewObjects + Send + Sync>,
+		callback: Arc<InnerClientCallback<C>>,
 		config: ClientConfig,
-		rx: mpsc::Receiver<ConnectionHandlerCommand>,
+		rx: mpsc::Receiver<ReceiveHandlerCommand>,
 		out_buffer_full: Arc<AtomicBool>,
 	) -> Result<Self, Error> {
 		let connection =
@@ -82,7 +75,7 @@ impl ConnectionHandler {
 				ConnectionHandlerState::WaitingForStart => {
 					if let Some(cmd) = self.rx.recv().await {
 						match cmd {
-							ConnectionHandlerCommand::Start => {
+							ReceiveHandlerCommand::Start => {
 								self.state.store(
 									ConnectionHandlerState::Starting,
 									std::sync::atomic::Ordering::Relaxed,
@@ -114,11 +107,12 @@ impl ConnectionHandler {
 					);
 				}
 				ConnectionHandlerState::Started => {
+					self.callback.on_connection_started().await;
 					if let Err(e) = ReceiveHandler::new(
 						&mut self.read_connection,
 						&mut self.write_connection,
 						self.callback.clone(),
-						self.config.clone(),
+						self.config.protocol.clone(),
 						&mut self.rx,
 						self.out_buffer_full.clone(),
 					)
@@ -130,6 +124,7 @@ impl ConnectionHandler {
 							ConnectionHandlerState::Reconnecting,
 							std::sync::atomic::Ordering::Relaxed,
 						);
+						self.callback.on_error(e).await;
 						continue;
 					}
 					tracing::debug!("Received a stop. Going back to waiting for start");
@@ -137,9 +132,11 @@ impl ConnectionHandler {
 						ConnectionHandlerState::WaitingForStart,
 						std::sync::atomic::Ordering::Relaxed,
 					);
+					self.callback.on_connection_stopped().await;
 				}
 				ConnectionHandlerState::Reconnecting => {
 					tracing::debug!("Reconnecting");
+					self.callback.on_reconnecting().await;
 					let Ok(connection) = Self::make_connection(&self.config).await else {
 						tracing::error!("Error making connection");
 						tokio::time::sleep(self.config.protocol.t0).await;
@@ -225,13 +222,13 @@ impl ConnectionHandler {
 	#[instrument(level = "debug", skip_all)]
 	pub async fn send_start_dt(&mut self) -> Result<(), Error> {
 		let mut buffer = [0; 255];
-		ReceiveHandler::send_frame(&mut self.write_connection, &START_DT_ACT_FRAME)
+		send_frame(&mut self.write_connection, &START_DT_ACT_FRAME)
 			.await
 			.whatever_context("Error sending startDT activation")?;
 
 		let apdu = tokio::time::timeout(
 			self.config.protocol.t1,
-			ReceiveHandler::receive_apdu(&mut self.read_connection, &mut buffer),
+			receive_apdu(&mut self.read_connection, &mut buffer),
 		)
 		.await
 		.whatever_context("Timeout waiting for startDT activation")?;

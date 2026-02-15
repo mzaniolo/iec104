@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use iec104::{
 	asdu::Asdu,
-	client::{Client, OnNewObjects, errors::ClientError},
+	client::{Client, ClientCallback, errors::ClientError},
 	config::ClientConfig,
 	types::{
 		commands::Rcs,
@@ -84,9 +84,23 @@ async fn main() -> Result<(), Whatever> {
 struct MyCallback;
 
 #[async_trait]
-impl OnNewObjects for MyCallback {
-	async fn on_new_objects(&self, _asdu: Asdu) {
-		// tracing::info!("Received objects: {objects:?}");
+impl ClientCallback for MyCallback {
+	// Required callbacks
+	async fn on_new_objects(&self, asdu: Asdu) {
+		tracing::trace!("Received objects: {asdu:?}");
+	}
+	// Optional callbacks
+	async fn on_connection_started(&self) {
+		tracing::debug!("Connection started");
+	}
+	async fn on_connection_stopped(&self) {
+		tracing::debug!("Connection stopped");
+	}
+	async fn on_error(&self, error: iec104::error::Error) {
+		tracing::debug!("Error: {error}");
+	}
+	async fn on_reconnecting(&self) {
+		tracing::debug!("Reconnecting");
 	}
 }
 
