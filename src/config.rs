@@ -68,6 +68,28 @@ pub struct ClientConfig {
 	pub tls: Option<TlsClientConfig>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServerConfig {
+	/// The address of the server.
+	pub address: String,
+	/// The port of the server.
+	pub port: u16,
+	#[serde(default)]
+	pub protocol: ProtocolConfig,
+	/// The TLS configuration.
+	#[serde(default)]
+	pub tls: Option<TlsServerConfig>,
+}
+
+/// The server TLS configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TlsServerConfig {
+	/// Path to the server certificate.
+	pub server_certificate: PathBuf,
+	/// Path to the server key
+	pub server_key: PathBuf,
+}
+
 impl Default for ProtocolConfig {
 	fn default() -> Self {
 		Self {
@@ -83,6 +105,17 @@ impl Default for ProtocolConfig {
 }
 
 impl Default for ClientConfig {
+	fn default() -> Self {
+		Self {
+			address: "127.0.0.1".to_owned(),
+			port: 2404,
+			protocol: ProtocolConfig::default(),
+			tls: None,
+		}
+	}
+}
+
+impl Default for ServerConfig {
 	fn default() -> Self {
 		Self {
 			address: "127.0.0.1".to_owned(),

@@ -1,8 +1,7 @@
 use snafu::Snafu;
 use tokio::sync::mpsc;
 
-use super::connection_handler::ConnectionHandlerCommand;
-use crate::error::SpanTraceWrapper;
+use crate::{error::SpanTraceWrapper, receive_handler::ReceiveHandlerCommand};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub), context(suffix(false)))]
@@ -24,7 +23,7 @@ pub enum ClientError {
 	},
 	#[snafu(display("Error sending command"))]
 	SendCommand {
-		source: mpsc::error::SendError<ConnectionHandlerCommand>,
+		source: mpsc::error::SendError<ReceiveHandlerCommand>,
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},

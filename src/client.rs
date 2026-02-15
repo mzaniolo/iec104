@@ -1,23 +1,15 @@
 use std::{
 	fmt::Debug,
-	pin::Pin,
 	sync::{Arc, atomic::AtomicBool},
 };
 
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use snafu::{ResultExt, whatever};
-use tokio::{
-	io::{AsyncRead, AsyncWrite},
-	net::TcpStream,
-	sync::mpsc,
-	task::JoinHandle,
-};
-use tokio_native_tls::TlsStream;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::instrument;
 
 use crate::{
-	apdu::{Frame, UFrame},
+	Connection,
 	asdu::Asdu,
 	client::{
 		connection_handler::{ConnectionHandler, ConnectionHandlerState},
@@ -26,6 +18,7 @@ use crate::{
 	config::ClientConfig,
 	cot::Cot,
 	error::Error,
+	receive_handler::ReceiveHandlerCallback,
 	types::{
 		CBoNa1, CBoTa1, CScNa1, CScTa1, CdcNa1, CdcTa1, CrcNa1, CrcTa1, GenericObject,
 		InformationObjects,
@@ -38,97 +31,71 @@ use crate::{
 
 mod connection_handler;
 pub mod errors;
-mod receive_handler;
 
-use connection_handler::{AtomicConnectionHandlerState, ConnectionHandlerCommand};
+use connection_handler::AtomicConnectionHandlerState;
 
-lazy_static! {
-	static ref TEST_FR_CON_FRAME: Frame =
-		Frame::U(UFrame { test_fr_confirmation: true, ..Default::default() });
-	static ref START_DT_CON_FRAME: Frame =
-		Frame::U(UFrame { start_dt_confirmation: true, ..Default::default() });
-	static ref STOP_DT_CON_FRAME: Frame =
-		Frame::U(UFrame { stop_dt_confirmation: true, ..Default::default() });
-	static ref TEST_FR_ACT_FRAME: Frame =
-		Frame::U(UFrame { test_fr_activation: true, ..Default::default() });
-	static ref START_DT_ACT_FRAME: Frame =
-		Frame::U(UFrame { start_dt_activation: true, ..Default::default() });
-	static ref STOP_DT_ACT_FRAME: Frame =
-		Frame::U(UFrame { stop_dt_activation: true, ..Default::default() });
+use crate::receive_handler::ReceiveHandlerCommand;
+
+#[async_trait]
+pub trait ClientCallback {
+	async fn on_new_objects(&self, asdu: Asdu);
+
+	async fn on_connection_started(&self) {
+		tracing::debug!("Connection started");
+	}
+	async fn on_connection_stopped(&self) {
+		tracing::debug!("Connection stopped");
+	}
+	async fn on_error(&self, error: Error) {
+		tracing::debug!("Error: {error}");
+	}
+	async fn on_reconnecting(&self) {
+		tracing::debug!("Reconnecting");
+	}
 }
 
 #[derive(Debug)]
-enum Connection {
-	Tcp(TcpStream),
-	Tls(TlsStream<TcpStream>),
+struct InnerClientCallback<C: ClientCallback + Send + Sync> {
+	callback: C,
 }
 
-impl AsyncRead for Connection {
-	fn poll_read(
-		self: Pin<&mut Self>,
-		cx: &mut std::task::Context<'_>,
-		buf: &mut tokio::io::ReadBuf<'_>,
-	) -> std::task::Poll<std::io::Result<()>> {
-		match self.get_mut() {
-			Connection::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
-			Connection::Tls(stream) => Pin::new(stream).poll_read(cx, buf),
-		}
+#[async_trait::async_trait]
+impl<C: ClientCallback + Send + Sync> ReceiveHandlerCallback for InnerClientCallback<C> {
+	async fn on_new_objects(&self, asdu: Asdu) {
+		self.callback.on_new_objects(asdu).await;
 	}
 }
 
-impl AsyncWrite for Connection {
-	fn poll_write(
-		self: Pin<&mut Self>,
-		cx: &mut std::task::Context<'_>,
-		buf: &[u8],
-	) -> std::task::Poll<Result<usize, std::io::Error>> {
-		match self.get_mut() {
-			Connection::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
-			Connection::Tls(stream) => Pin::new(stream).poll_write(cx, buf),
-		}
+impl<C: ClientCallback + Send + Sync> InnerClientCallback<C> {
+	async fn on_connection_started(&self) {
+		self.callback.on_connection_started().await;
 	}
-
-	fn poll_flush(
-		self: Pin<&mut Self>,
-		cx: &mut std::task::Context<'_>,
-	) -> std::task::Poll<Result<(), std::io::Error>> {
-		match self.get_mut() {
-			Connection::Tcp(stream) => Pin::new(stream).poll_flush(cx),
-			Connection::Tls(stream) => Pin::new(stream).poll_flush(cx),
-		}
+	async fn on_connection_stopped(&self) {
+		self.callback.on_connection_stopped().await;
 	}
-
-	fn poll_shutdown(
-		self: Pin<&mut Self>,
-		cx: &mut std::task::Context<'_>,
-	) -> std::task::Poll<Result<(), std::io::Error>> {
-		match self.get_mut() {
-			Connection::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
-			Connection::Tls(stream) => Pin::new(stream).poll_shutdown(cx),
-		}
+	async fn on_error(&self, error: Error) {
+		self.callback.on_error(error).await;
+	}
+	async fn on_reconnecting(&self) {
+		self.callback.on_reconnecting().await;
 	}
 }
 
-#[async_trait]
-pub trait OnNewObjects {
-	async fn on_new_objects(&self, asdu: Asdu);
-}
-
-pub struct Client {
+pub struct Client<C: ClientCallback + Send + Sync + 'static> {
 	config: ClientConfig,
-	callback: Arc<dyn OnNewObjects + Send + Sync>,
+	callback: Arc<InnerClientCallback<C>>,
 	receive_task: Option<JoinHandle<Result<(), Error>>>,
-	write_tx: Option<mpsc::Sender<ConnectionHandlerCommand>>,
+	write_tx: Option<mpsc::Sender<ReceiveHandlerCommand>>,
 	out_buffer_full: Arc<AtomicBool>,
 	connection_handler_state: Option<Arc<AtomicConnectionHandlerState>>,
 }
 
-impl Client {
+impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 	#[must_use]
-	pub fn new(config: ClientConfig, callback: impl OnNewObjects + Send + Sync + 'static) -> Self {
+	pub fn new(config: ClientConfig, callback: C) -> Self {
 		Self {
 			config,
-			callback: Arc::new(callback),
+			callback: Arc::new(InnerClientCallback { callback }),
 			receive_task: None,
 			write_tx: None,
 			out_buffer_full: Arc::new(AtomicBool::new(false)),
@@ -174,7 +141,7 @@ impl Client {
 		}
 
 		if let Some(tx) = &self.write_tx {
-			tx.send(ConnectionHandlerCommand::Asdu(asdu)).await.context(errors::SendCommand)?;
+			tx.send(ReceiveHandlerCommand::Asdu(asdu)).await.context(errors::SendCommand)?;
 		} else {
 			return errors::NoWriteChannel.fail();
 		}
@@ -193,7 +160,7 @@ impl Client {
 		}
 
 		if let Some(tx) = &self.write_tx {
-			tx.send(ConnectionHandlerCommand::Start).await.context(errors::SendCommand)?;
+			tx.send(ReceiveHandlerCommand::Start).await.context(errors::SendCommand)?;
 		} else {
 			return errors::NoWriteChannel.fail();
 		}
@@ -205,7 +172,7 @@ impl Client {
 		self.check_connection_started()?;
 
 		if let Some(tx) = &self.write_tx {
-			tx.send(ConnectionHandlerCommand::Stop).await.context(errors::SendCommand)?;
+			tx.send(ReceiveHandlerCommand::Stop).await.context(errors::SendCommand)?;
 		} else {
 			return errors::NoWriteChannel.fail();
 		}
@@ -217,7 +184,7 @@ impl Client {
 		self.check_connection_started()?;
 
 		if let Some(tx) = &self.write_tx {
-			tx.send(ConnectionHandlerCommand::Test).await.context(errors::SendCommand)?;
+			tx.send(ReceiveHandlerCommand::Test).await.context(errors::SendCommand)?;
 		} else {
 			return errors::NoWriteChannel.fail();
 		}
@@ -422,7 +389,7 @@ impl Client {
 	}
 }
 
-impl Debug for Client {
+impl<C: ClientCallback + Send + Sync + 'static> Debug for Client<C> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(
 			f,
