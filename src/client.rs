@@ -230,7 +230,7 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 			sequence: false,
 			test: false,
 			cot: Cot::Request,
-			positive: false,
+			negative: false,
 		})
 		.await
 	}
@@ -274,7 +274,7 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 			sequence: false,
 			test: false,
 			cot: Cot::Request,
-			positive: false,
+			negative: false,
 		})
 		.await
 	}
@@ -318,7 +318,7 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 			sequence: false,
 			test: false,
 			cot: Cot::Request,
-			positive: false,
+			negative: false,
 		})
 		.await
 	}
@@ -355,7 +355,7 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 			sequence: false,
 			test: false,
 			cot: Cot::Request,
-			positive: false,
+			negative: false,
 		})
 		.await
 	}

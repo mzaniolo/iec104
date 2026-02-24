@@ -66,7 +66,7 @@ fn make_asdu() -> Asdu {
 		address_field: 47,
 		sequence: false,
 		test: false,
-		positive: false,
+		negative: false,
 		information_objects: InformationObjects::MSpNa1(vec![
 			GenericObject {
 				address: 1,

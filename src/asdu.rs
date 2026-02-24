@@ -16,7 +16,7 @@ pub struct Asdu {
 	pub address_field: u16,
 	pub sequence: bool,
 	pub test: bool,
-	pub positive: bool,
+	pub negative: bool,
 	pub information_objects: InformationObjects,
 }
 
@@ -32,7 +32,7 @@ impl Asdu {
 
 		let byte = bytes.get(2).context(NotEnoughBytes)?;
 		let test = byte & 0b1000_0000 != 0;
-		let positive = byte & 0b0100_0000 != 0;
+		let negative = byte & 0b0100_0000 != 0;
 		let cot = (byte & 0b0011_1111).try_into().context(InvalidCot)?;
 
 		let originator_address = *bytes.get(3).context(NotEnoughBytes)?;
@@ -86,7 +86,7 @@ impl Asdu {
 			address_field,
 			sequence,
 			test,
-			positive,
+			negative,
 			information_objects,
 		})
 	}
@@ -106,7 +106,7 @@ impl Asdu {
 		if self.test {
 			byte |= 0b1000_0000;
 		}
-		if self.positive {
+		if self.negative {
 			byte |= 0b0100_0000;
 		}
 		buffer.push(byte);
