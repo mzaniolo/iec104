@@ -283,7 +283,7 @@ mod tests {
 		assert_eq!(i_frame.asdu.address_field, 12);
 		assert!(!i_frame.asdu.sequence);
 		assert!(!i_frame.asdu.test);
-		assert!(!i_frame.asdu.positive);
+		assert!(!i_frame.asdu.negative);
 		let InformationObjects::MMeNb1(objects) = &i_frame.asdu.information_objects else {
 			panic!("Information objects were expected to be a MMeNb1")
 		};
@@ -370,7 +370,7 @@ mod tests {
 		assert_eq!(i_frame.asdu.address_field, 12);
 		assert!(!i_frame.asdu.sequence);
 		assert!(!i_frame.asdu.test);
-		assert!(!i_frame.asdu.positive);
+		assert!(!i_frame.asdu.negative);
 		let InformationObjects::CCiNa1(objects) = &i_frame.asdu.information_objects else {
 			panic!("Information objects were expected to be a CCiNa1")
 		};
