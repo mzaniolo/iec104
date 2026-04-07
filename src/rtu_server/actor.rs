@@ -1,4 +1,8 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	net::SocketAddr,
+	sync::Arc,
+};
 
 use super::{
 	command_handler::RtuCommandHandler,
@@ -30,6 +34,28 @@ pub(crate) enum ActorMsg {
 		address: PointAddress,
 		initial: PointValue,
 		reply: tokio::sync::oneshot::Sender<Result<(), PointAddress>>,
+	},
+	Unregister {
+		address: PointAddress,
+		reply: tokio::sync::oneshot::Sender<Result<(), PointAddress>>,
+	},
+	RegisterPoints {
+		points: Vec<(PointAddress, PointValue)>,
+		reply: tokio::sync::oneshot::Sender<Result<(), RegisterPointsError>>,
+	},
+	UnregisterAll {
+		reply: tokio::sync::oneshot::Sender<usize>,
+	},
+}
+
+/// Failure for a bulk register (actor-internal; mapped to
+/// [`super::error::RtuHandleError`]).
+#[derive(Debug)]
+pub(crate) enum RegisterPointsError {
+	/// At least one [`PointAddress`] appears more than once in the batch.
+	DuplicateInInput,
+	AlreadyInModel {
+		address: PointAddress,
 	},
 }
 
@@ -74,6 +100,22 @@ pub(super) async fn run_actor(
 				};
 				let _ = reply.send(res);
 			}
+			ActorMsg::Unregister { address, reply } => {
+				let res = match model.remove(&address) {
+					Some(_) => Ok(()),
+					None => Err(address),
+				};
+				let _ = reply.send(res);
+			}
+			ActorMsg::RegisterPoints { points, reply } => {
+				let res = try_register_points(&mut model, points);
+				let _ = reply.send(res);
+			}
+			ActorMsg::UnregisterAll { reply } => {
+				let n = model.len();
+				model.clear();
+				let _ = reply.send(n);
+			}
 			ActorMsg::IngressAsdu { asdu, connection_id, peer } => {
 				handle_ingress_asdu(
 					&mut model,
@@ -88,6 +130,26 @@ pub(super) async fn run_actor(
 		}
 	}
 	tracing::warn!("RTU actor channel closed; stopping model loop");
+}
+
+fn try_register_points(
+	model: &mut HashMap<PointAddress, PointValue>,
+	points: Vec<(PointAddress, PointValue)>,
+) -> Result<(), RegisterPointsError> {
+	if points.is_empty() {
+		return Ok(());
+	}
+	let mut seen = HashSet::with_capacity(points.len());
+	for (addr, _) in &points {
+		if !seen.insert(*addr) {
+			return Err(RegisterPointsError::DuplicateInInput);
+		}
+		if model.contains_key(addr) {
+			return Err(RegisterPointsError::AlreadyInModel { address: *addr });
+		}
+	}
+	model.extend(points);
+	Ok(())
 }
 
 async fn handle_set_point(

@@ -12,6 +12,13 @@
 //! confirmation (echo / negative) and optional
 //! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
 //! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
+//!
+//! The point set can be changed at runtime with
+//! [`RtuServerHandle::register_point`], [`RtuServerHandle::register_points`],
+//! [`RtuServerHandle::unregister_point`], and
+//! [`RtuServerHandle::unregister_all`] (no spontaneous ASDU on
+//! register/unregister; clients see changes on the next general interrogation
+//! or after updates to remaining points).
 
 mod actor;
 mod command_handler;
@@ -90,6 +97,11 @@ impl RtuServerHandle {
 	}
 
 	/// Register a new point. Fails if the address is already present.
+	///
+	/// Does not broadcast; use [`Self::set_point`] to publish an initial value
+	/// spontaneously, or rely on general interrogation. See also
+	/// [`Self::unregister_point`]. For several points at once, see
+	/// [`Self::register_points`].
 	pub async fn register_point(
 		&self,
 		address: PointAddress,
@@ -103,6 +115,65 @@ impl RtuServerHandle {
 			Err(_) => Err(RtuHandleError::ActorStopped),
 			Ok(Ok(())) => Ok(()),
 			Ok(Err(address)) => Err(RtuHandleError::AlreadyRegistered { address }),
+		}
+	}
+
+	/// Remove a point from the model. Fails if the address is not present.
+	///
+	/// Like [`Self::register_point`], this does **not** send an ASDU; removed
+	/// points simply stop appearing in the next general interrogation and no
+	/// longer accept updates or command targets in the in-memory model.
+	pub async fn unregister_point(&self, address: PointAddress) -> Result<(), RtuHandleError> {
+		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+		self.tx
+			.send(actor::ActorMsg::Unregister { address, reply: reply_tx })
+			.map_err(|_| RtuHandleError::Disconnected)?;
+		match reply_rx.await {
+			Err(_) => Err(RtuHandleError::ActorStopped),
+			Ok(Ok(())) => Ok(()),
+			Ok(Err(address)) => Err(RtuHandleError::NotRegistered { address }),
+		}
+	}
+
+	/// Register several points in one actor turn. **All-or-nothing**: if any
+	/// address is already in the model, or appears twice in `points`, nothing
+	/// is inserted.
+	///
+	/// Does not broadcast. An empty iterator succeeds immediately.
+	pub async fn register_points(
+		&self,
+		points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+	) -> Result<(), RtuHandleError> {
+		let points: Vec<(PointAddress, PointValue)> = points.into_iter().collect();
+		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+		self.tx
+			.send(actor::ActorMsg::RegisterPoints { points, reply: reply_tx })
+			.map_err(|_| RtuHandleError::Disconnected)?;
+		match reply_rx.await {
+			Err(_) => Err(RtuHandleError::ActorStopped),
+			Ok(Ok(())) => Ok(()),
+			Ok(Err(actor::RegisterPointsError::DuplicateInInput)) => {
+				Err(RtuHandleError::DuplicateAddressInInput)
+			}
+			Ok(Err(actor::RegisterPointsError::AlreadyInModel { address })) => {
+				Err(RtuHandleError::AlreadyRegistered { address })
+			}
+		}
+	}
+
+	/// Remove every point from the model. Returns how many entries were
+	/// removed.
+	///
+	/// Does not broadcast. [`Self::unregister_all`] on an empty model returns
+	/// `Ok(0)`.
+	pub async fn unregister_all(&self) -> Result<usize, RtuHandleError> {
+		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+		self.tx
+			.send(actor::ActorMsg::UnregisterAll { reply: reply_tx })
+			.map_err(|_| RtuHandleError::Disconnected)?;
+		match reply_rx.await {
+			Err(_) => Err(RtuHandleError::ActorStopped),
+			Ok(n) => Ok(n),
 		}
 	}
 }

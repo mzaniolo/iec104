@@ -20,7 +20,8 @@ pub enum SetPointError {
 
 /// Error returned by
 /// [`super::RtuServerHandle`](crate::rtu_server::RtuServerHandle) when the
-/// actor is gone, a point already exists, or a [`SetPointError`] occurs.
+/// actor is gone, register/unregister/bulk-register conflicts, or a
+/// [`SetPointError`] occurs.
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub), context(suffix(false)))]
 pub enum RtuHandleError {
@@ -34,6 +35,15 @@ pub enum RtuHandleError {
 	/// was called for an existing address.
 	#[snafu(display("Point already registered: {address}"))]
 	AlreadyRegistered { address: PointAddress },
+	/// At least one [`PointAddress`] appears more than once in the iterator
+	/// passed to
+	/// [`super::RtuServerHandle::register_points`](crate::rtu_server::RtuServerHandle::register_points).
+	#[snafu(display("register_points input contains duplicate point address(es)"))]
+	DuplicateAddressInInput,
+	/// [`super::RtuServerHandle::unregister_point`](crate::rtu_server::RtuServerHandle::unregister_point)
+	/// was called for an unknown address.
+	#[snafu(display("Point not registered: {address}"))]
+	NotRegistered { address: PointAddress },
 	/// [`super::RtuServerHandle::set_point`](crate::rtu_server::RtuServerHandle::set_point) failed.
 	#[snafu(display("{source}"))]
 	SetPoint { source: SetPointError },
