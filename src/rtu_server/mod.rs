@@ -2,16 +2,31 @@
 //! into one actor task, built on [`crate::server::Server`] and
 //! [`crate::server::ServerCallback`].
 //!
-//! v1 supports a small monitoring set (`M_SP_NA_1`, `M_ME_NC_1`) and general
-//! interrogation activation (`C_IC_NA_1` → activation confirmation +
+//! Monitoring types: `M_SP_NA_1`, `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1`.
+//! General interrogation: `C_IC_NA_1` (activation → confirmation +
 //! interrogation data on the same connection).
+//!
+//! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*` /
+//! `C_SE_*` types): the standard defines the telegram, not what it must do in
+//! your plant. You supply an [`RtuCommandHandler`] that returns activation
+//! confirmation (echo / negative) and optional
+//! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
+//! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
 
 mod actor;
+mod command_handler;
+mod command_presets;
+mod commands;
 mod error;
 mod model;
+mod output;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+pub use command_handler::{
+	CommandContext, CommandHandling, RejectAllCommands, RtuCommandHandler, command_handler_from_fn,
+};
+pub use command_presets::MapCommandsToSameIoaMonitoring;
 pub use error::{RtuHandleError, SetPointError};
 pub use model::{PointAddress, PointValue};
 
@@ -31,13 +46,14 @@ impl RtuServer {
 	pub async fn start(
 		config: ServerConfig,
 		initial_points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+		command_handler: Arc<dyn RtuCommandHandler>,
 	) -> Result<RtuServerHandle, Error> {
 		let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 		let ingress = actor::NetworkIngress::new(tx.clone());
 		let server = crate::server::Server::start(config, ingress).await?;
 		let model: HashMap<PointAddress, PointValue> = initial_points.into_iter().collect();
 		let server_for_actor = server.clone();
-		tokio::spawn(actor::run_actor(rx, server_for_actor, model));
+		tokio::spawn(actor::run_actor(rx, server_for_actor, model, command_handler));
 		Ok(RtuServerHandle { tx })
 	}
 }
