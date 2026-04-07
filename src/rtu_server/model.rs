@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-	types::{MMeNc1, MSpNa1},
+	types::{MMeNa1, MMeNb1, MMeNc1, MSpNa1},
 	types_id::TypeId,
 };
 
@@ -29,12 +29,19 @@ impl fmt::Display for PointAddress {
 	}
 }
 
-/// In-memory value for one monitored point (minimal v1 set).
+/// In-memory value for one monitored point.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PointValue {
 	/// Single-point information without time tag (`M_SP_NA_1`).
 	MSpNa1(MSpNa1),
-	/// Measured value, short float (`M_ME_NC_1`).
+	/// Measured value, normalized (`M_ME_NA_1`) — pairs with set-point
+	/// `C_SE_NA_1` / `C_SE_TA_1`.
+	MMeNa1(MMeNa1),
+	/// Measured value, scaled (`M_ME_NB_1`) — pairs with `C_SE_NB_1` /
+	/// `C_SE_TB_1`.
+	MMeNb1(MMeNb1),
+	/// Measured value, short float (`M_ME_NC_1`) — pairs with `C_SE_NC_1` /
+	/// `C_SE_TC_1`.
 	MMeNc1(MMeNc1),
 }
 
@@ -43,6 +50,8 @@ impl PointValue {
 	pub const fn type_id(&self) -> TypeId {
 		match self {
 			Self::MSpNa1(_) => TypeId::M_SP_NA_1,
+			Self::MMeNa1(_) => TypeId::M_ME_NA_1,
+			Self::MMeNb1(_) => TypeId::M_ME_NB_1,
 			Self::MMeNc1(_) => TypeId::M_ME_NC_1,
 		}
 	}

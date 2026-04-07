@@ -1,13 +1,18 @@
 //! Example high-level RTU server: in-memory points updated via
 //! [`iec104::rtu_server::RtuServerHandle`].
+//!
+//! Command ASDUs are handled by
+//! [`iec104::rtu_server::MapCommandsToSameIoaMonitoring`] (optional
+//! test preset). In real integrations, implement
+//! [`iec104::rtu_server::RtuCommandHandler`] yourself.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use iec104::{
 	config::ServerConfig,
-	rtu_server::{PointAddress, PointValue, RtuServer},
+	rtu_server::{MapCommandsToSameIoaMonitoring, PointAddress, PointValue, RtuServer},
 	types::{
-		MMeNc1, MSpNa1,
+		MMeNa1, MMeNb1, MMeNc1, MSpNa1,
 		information_elements::{Siq, Spi},
 		quality_descriptors::Qds,
 	},
@@ -47,7 +52,11 @@ async fn main() -> Result<(), Whatever> {
 				PointAddress::new(47, 11),
 				PointValue::MMeNc1(MMeNc1 { value: 42.0, qds: Qds::default() }),
 			),
+			// Normalized / scaled set-point targets (`C_SE_NA_1` / `C_SE_NB_1`)
+			(PointAddress::new(47, 20), PointValue::MMeNa1(MMeNa1 { nva: 0, qds: Qds::default() })),
+			(PointAddress::new(47, 21), PointValue::MMeNb1(MMeNb1 { sva: 0, qds: Qds::default() })),
 		],
+		Arc::new(MapCommandsToSameIoaMonitoring),
 	)
 	.await
 	.whatever_context("Failed to start RTU server")?;

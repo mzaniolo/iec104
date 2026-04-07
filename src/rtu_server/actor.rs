@@ -1,19 +1,19 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use super::{
+	command_handler::RtuCommandHandler,
+	commands,
 	error::{InterrogationError, SetPointError},
 	model::{PointAddress, PointValue},
+	output::{interrogation_data_asdus, spontaneous_asdu},
 };
 use crate::{
 	asdu::Asdu,
 	cot::Cot,
 	server::{ConnectionId, Server, ServerCallback},
-	types::{CIcNa1, GenericObject, InformationObjects, MMeNc1, MSpNa1, commands::Qoi},
+	types::{CIcNa1, GenericObject, InformationObjects, commands::Qoi},
 	types_id::TypeId,
 };
-
-/// Maximum number of information objects per ASDU (7-bit count field).
-const MAX_OBJECTS_PER_ASDU: usize = 127;
 
 pub(crate) enum ActorMsg {
 	IngressAsdu {
@@ -55,6 +55,7 @@ pub(super) async fn run_actor(
 	mut rx: tokio::sync::mpsc::UnboundedReceiver<ActorMsg>,
 	server: Server,
 	mut model: HashMap<PointAddress, PointValue>,
+	command_handler: Arc<dyn RtuCommandHandler>,
 ) {
 	while let Some(msg) = rx.recv().await {
 		match msg {
@@ -74,7 +75,15 @@ pub(super) async fn run_actor(
 				let _ = reply.send(res);
 			}
 			ActorMsg::IngressAsdu { asdu, connection_id, peer } => {
-				handle_ingress_asdu(&model, &server, asdu, connection_id, peer).await;
+				handle_ingress_asdu(
+					&mut model,
+					&server,
+					&command_handler,
+					asdu,
+					connection_id,
+					peer,
+				)
+				.await;
 			}
 		}
 	}
@@ -103,12 +112,24 @@ async fn handle_set_point(
 }
 
 async fn handle_ingress_asdu(
-	model: &HashMap<PointAddress, PointValue>,
+	model: &mut HashMap<PointAddress, PointValue>,
 	server: &Server,
+	command_handler: &Arc<dyn RtuCommandHandler>,
 	asdu: Asdu,
 	connection_id: ConnectionId,
 	peer: SocketAddr,
 ) {
+	match commands::try_handle_commands(model, server, &asdu, connection_id, peer, command_handler)
+		.await
+	{
+		Ok(true) => return,
+		Ok(false) => {}
+		Err(e) => {
+			tracing::error!(error = ?e, ?peer, "command handling (send confirmation or broadcast)");
+			return;
+		}
+	}
+
 	if asdu.type_id == TypeId::C_IC_NA_1 {
 		match handle_interrogation(model, server, &asdu, connection_id).await {
 			Ok(()) => return,
@@ -119,8 +140,6 @@ async fn handle_ingress_asdu(
 	tracing::trace!(?peer, type_id = ?asdu.type_id, "ingress ASDU (no handler)");
 }
 
-/// `Ok(())` if this ASDU was handled as interrogation;
-/// [`InterrogationError::Skipped`] if not applicable.
 async fn handle_interrogation(
 	model: &HashMap<PointAddress, PointValue>,
 	server: &Server,
@@ -167,91 +186,4 @@ async fn handle_interrogation(
 			.map_err(|source| InterrogationError::SendData { source })?;
 	}
 	Ok(())
-}
-
-fn spontaneous_asdu(address: PointAddress, value: &PointValue) -> Asdu {
-	let ca = address.common_address;
-	let ioa = address.information_object_address;
-	match value {
-		PointValue::MSpNa1(m) => Asdu {
-			type_id: TypeId::M_SP_NA_1,
-			cot: Cot::SpontaneousData,
-			originator_address: 0,
-			address_field: ca,
-			sequence: false,
-			test: false,
-			negative: false,
-			information_objects: InformationObjects::MSpNa1(vec![GenericObject {
-				address: ioa,
-				object: m.clone(),
-			}]),
-		},
-		PointValue::MMeNc1(m) => Asdu {
-			type_id: TypeId::M_ME_NC_1,
-			cot: Cot::SpontaneousData,
-			originator_address: 0,
-			address_field: ca,
-			sequence: false,
-			test: false,
-			negative: false,
-			information_objects: InformationObjects::MMeNc1(vec![GenericObject {
-				address: ioa,
-				object: m.clone(),
-			}]),
-		},
-	}
-}
-
-fn interrogation_data_asdus(ca: u16, model: &HashMap<PointAddress, PointValue>) -> Vec<Asdu> {
-	let mut out = Vec::new();
-
-	let mut sp: Vec<(u32, MSpNa1)> = Vec::new();
-	let mut mv: Vec<(u32, MMeNc1)> = Vec::new();
-	for (addr, v) in model.iter() {
-		if addr.common_address != ca {
-			continue;
-		}
-		let ioa = addr.information_object_address;
-		match v {
-			PointValue::MSpNa1(m) => sp.push((ioa, m.clone())),
-			PointValue::MMeNc1(m) => mv.push((ioa, m.clone())),
-		}
-	}
-	sp.sort_by_key(|(ioa, _)| *ioa);
-	for chunk in sp.chunks(MAX_OBJECTS_PER_ASDU) {
-		let objs: Vec<GenericObject<MSpNa1>> = chunk
-			.iter()
-			.map(|(ioa, m)| GenericObject { address: *ioa, object: m.clone() })
-			.collect();
-		out.push(Asdu {
-			type_id: TypeId::M_SP_NA_1,
-			cot: Cot::InterrogationGeneral,
-			originator_address: 0,
-			address_field: ca,
-			sequence: false,
-			test: false,
-			negative: false,
-			information_objects: InformationObjects::MSpNa1(objs),
-		});
-	}
-
-	mv.sort_by_key(|(ioa, _)| *ioa);
-	for chunk in mv.chunks(MAX_OBJECTS_PER_ASDU) {
-		let objs: Vec<GenericObject<MMeNc1>> = chunk
-			.iter()
-			.map(|(ioa, m)| GenericObject { address: *ioa, object: m.clone() })
-			.collect();
-		out.push(Asdu {
-			type_id: TypeId::M_ME_NC_1,
-			cot: Cot::InterrogationGeneral,
-			originator_address: 0,
-			address_field: ca,
-			sequence: false,
-			test: false,
-			negative: false,
-			information_objects: InformationObjects::MMeNc1(objs),
-		});
-	}
-
-	out
 }
