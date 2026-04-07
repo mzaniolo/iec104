@@ -18,6 +18,7 @@ pub mod config;
 pub mod cot;
 pub mod error;
 mod receive_handler;
+pub mod rtu_server;
 pub mod server;
 pub mod types;
 pub mod types_id;
