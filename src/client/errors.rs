@@ -1,5 +1,5 @@
 use snafu::Snafu;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{error::SpanTraceWrapper, receive_handler::ReceiveHandlerCommand};
 
@@ -34,6 +34,12 @@ pub enum ClientError {
 	},
 	#[snafu(display("Output buffer is full"))]
 	OutputBufferFull {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	#[snafu(display("Receive handler closed before acknowledging ASDU enqueue"))]
+	ReceiveHandlerAsduAck {
+		source: oneshot::error::RecvError,
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},

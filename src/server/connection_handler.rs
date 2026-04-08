@@ -7,7 +7,7 @@ use atomic_enum::atomic_enum;
 use snafu::ResultExt as _;
 use tokio::{
 	io::{ReadHalf, WriteHalf},
-	sync::mpsc,
+	sync::{mpsc, oneshot},
 };
 
 use super::ConnectionId;
@@ -17,7 +17,9 @@ use crate::{
 	asdu::Asdu,
 	config::ServerConfig,
 	error::Error,
-	receive_handler::{ReceiveHandler, ReceiveHandlerCommand, receive_apdu, send_frame},
+	receive_handler::{
+		ReceiveHandler, ReceiveHandlerCommand, SendAsduQueueError, receive_apdu, send_frame,
+	},
 	server::{InnerServerCallback, ServerCallback, error},
 };
 
@@ -81,11 +83,17 @@ impl ConnectionHandler {
 		Self { id, address, _task: task, tx: cmd_tx, state }
 	}
 	pub async fn send_asdu(&self, asdu: Asdu) -> Result<(), error::ServerError> {
+		let (reply_tx, reply_rx) = oneshot::channel();
 		self.tx
-			.send(ReceiveHandlerCommand::Asdu(asdu))
+			.send(ReceiveHandlerCommand::Asdu { asdu, reply: reply_tx })
 			.await
 			.context(error::SendConnectionCommand)?;
-		Ok(())
+		match reply_rx.await.context(error::ReceiveHandlerAsduAck)? {
+			Ok(()) => Ok(()),
+			Err(SendAsduQueueError::PendingBufferFull) => {
+				error::PendingOutgoingAsduBufferFull.fail()
+			}
+		}
 	}
 	pub fn is_started(&self) -> bool {
 		self.state.load(std::sync::atomic::Ordering::Relaxed) == ConnectionState::Started

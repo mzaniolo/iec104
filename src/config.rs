@@ -18,14 +18,37 @@ pub struct ProtocolConfig {
 	/// The period for connections attempts. The default is 10 second.
 	#[serde(with = "humantime_serde", default = "default_duration::<10>")]
 	pub t0: Duration,
-	/// Maximum number of sent and unacknowledged ASDUs. Default is 12.
+	/// Maximum number of sent and unacknowledged I-format APDUs (`k` in IEC
+	/// 60870-5-104). Default is 12.
+	///
+	/// On the **server**, outgoing ASDUs beyond this limit are queued per
+	/// connection until the peer acknowledges with I/S frames (up to
+	/// [`Self::max_pending_outgoing_asdu`]). On the **client**,
+	/// [`crate::Client::send_asdu`] fails with `OutputBufferFull` while the `k`
+	/// window is full instead of enqueueing.
 	#[serde(default = "default_number::<12>")]
 	pub k: u16,
 	/// Latest acknowledge after receiving w I format APDUs. Default is 8
 	#[serde(default = "default_number::<8>")]
 	pub w: u16,
+	/// Maximum ASDUs queued per connection waiting for `k` window space (server
+	/// and client receive-handler). When full,
+	/// [`crate::server::ConnectionHandler::send_asdu`] and
+	/// [`crate::Client::send_asdu`] fail so upper layers can back off. Default
+	/// **1024**. Use **0** for no limit (not recommended on untrusted peers).
+	#[serde(default = "default_max_pending_outgoing_asdu")]
+	pub max_pending_outgoing_asdu: u32,
 	/// The originator address for the IEC 104 connection.
 	pub originator_address: u8,
+}
+
+impl ProtocolConfig {
+	/// `None` if [`Self::max_pending_outgoing_asdu`] is `0` (unlimited pending
+	/// queue).
+	#[must_use]
+	pub fn max_pending_outgoing_asdu_limit(&self) -> Option<usize> {
+		(self.max_pending_outgoing_asdu != 0).then_some(self.max_pending_outgoing_asdu as usize)
+	}
 }
 
 /// The client TLS configuration
@@ -99,6 +122,7 @@ impl Default for ProtocolConfig {
 			t0: Duration::from_secs(10),
 			k: 12,
 			w: 8,
+			max_pending_outgoing_asdu: 1024,
 			originator_address: 1,
 		}
 	}
@@ -128,6 +152,10 @@ impl Default for ServerConfig {
 
 const fn default_number<const N: u16>() -> u16 {
 	N
+}
+
+const fn default_max_pending_outgoing_asdu() -> u32 {
+	1024
 }
 
 const fn default_duration<const N: u64>() -> Duration {

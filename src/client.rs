@@ -34,7 +34,7 @@ pub mod errors;
 
 use connection_handler::AtomicConnectionHandlerState;
 
-use crate::receive_handler::ReceiveHandlerCommand;
+use crate::receive_handler::{ReceiveHandlerCommand, SendAsduQueueError};
 
 #[async_trait]
 pub trait ClientCallback {
@@ -141,11 +141,17 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 		}
 
 		if let Some(tx) = &self.write_tx {
-			tx.send(ReceiveHandlerCommand::Asdu(asdu)).await.context(errors::SendCommand)?;
+			let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+			tx.send(ReceiveHandlerCommand::Asdu { asdu, reply: reply_tx })
+				.await
+				.context(errors::SendCommand)?;
+			match reply_rx.await.context(errors::ReceiveHandlerAsduAck)? {
+				Ok(()) => Ok(()),
+				Err(SendAsduQueueError::PendingBufferFull) => errors::OutputBufferFull.fail(),
+			}
 		} else {
-			return errors::NoWriteChannel.fail();
+			errors::NoWriteChannel.fail()
 		}
-		Ok(())
 	}
 
 	#[instrument(level = "debug")]
