@@ -1,7 +1,10 @@
 use std::{
 	collections::VecDeque,
 	pin::Pin,
-	sync::{Arc, atomic::AtomicBool},
+	sync::{
+		Arc,
+		atomic::{AtomicBool, Ordering},
+	},
 	time::Duration,
 };
 
@@ -10,7 +13,7 @@ use snafu::{OptionExt as _, ResultExt as _, whatever};
 use tokio::{
 	io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, ReadHalf, WriteHalf},
 	select,
-	sync::mpsc,
+	sync::{mpsc, oneshot},
 	time::Instant,
 };
 use tracing::instrument;
@@ -122,12 +125,23 @@ pub(crate) async fn receive_apdu<R: AsyncRead + Unpin>(
 	Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Reason enqueueing an ASDU was rejected by the receive-handler task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendAsduQueueError {
+	/// [`ProtocolConfig::max_pending_outgoing_asdu`](crate::config::ProtocolConfig::max_pending_outgoing_asdu)
+	/// non-zero limit reached (waiting for `k` window / peer acks).
+	PendingBufferFull,
+}
+
+/// Payload for [`ReceiveHandlerCommand::Asdu`]'s `reply` oneshot.
+pub type SendAsduCommandAck = Result<(), SendAsduQueueError>;
+
+#[derive(Debug)]
 pub enum ReceiveHandlerCommand {
 	Start,
 	Stop,
 	Test,
-	Asdu(Asdu),
+	Asdu { asdu: Asdu, reply: oneshot::Sender<SendAsduCommandAck> },
 }
 
 #[async_trait::async_trait]
@@ -147,6 +161,8 @@ pub struct ReceiveHandler<'a, C: ReceiveHandlerCallback> {
 	t2: Pin<Box<tokio::time::Sleep>>,
 	t3: Pin<Box<tokio::time::Sleep>>,
 	unacknowledged_seq_num: VecDeque<(u16, Instant)>,
+	/// ASDUs from [`ReceiveHandlerCommand::Asdu`] waiting for `k` window space.
+	pending_outgoing_asdu: VecDeque<Asdu>,
 	sent_counter: u16,
 	received_counter: u16,
 	unacknowledged_rcv_frames: u16,
@@ -173,6 +189,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 			t2: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
 			t3: Box::pin(tokio::time::sleep(*TIMER_UNSET)),
 			unacknowledged_seq_num: VecDeque::with_capacity(config.k as usize),
+			pending_outgoing_asdu: config
+				.max_pending_outgoing_asdu_limit()
+				.map_or_else(VecDeque::new, |cap| VecDeque::with_capacity(cap.min(4096))),
 			sent_counter: 0,
 			received_counter: 0,
 			unacknowledged_rcv_frames: 0,
@@ -221,6 +240,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 						match apdu.frame {
 							Frame::I(i) => {
 								self.handle_receive_i_frame(&i)?;
+								self.flush_pending_outgoing().await.whatever_context(
+									"Error sending queued ASDUs after I-frame ack",
+								)?;
 								let new_t2_instant = Instant::now() + self.config.t2;
 								if new_t2_instant < self.t2.deadline() {
 									self.t2.as_mut().reset(new_t2_instant);
@@ -229,6 +251,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 							}
 							Frame::S(s) => {
 								self.handle_receive_s_frame(&s)?;
+								self.flush_pending_outgoing().await.whatever_context(
+									"Error sending queued ASDUs after S-frame ack",
+								)?;
 							}
 							Frame::U(u) => {
 								let should_stop = self.handle_receive_u_frame(&u).await?;
@@ -246,10 +271,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 				}
 				Some(cmd) = self.rx.recv() => {
 					match cmd {
-						ReceiveHandlerCommand::Asdu(asdu) => {
-							Self::handle_send_asdu(asdu, &mut self.sent_counter, self.received_counter, self.write_connection, &mut self.unacknowledged_seq_num, self.config.k, &mut self.unacknowledged_rcv_frames).await.whatever_context("Error sending command")?;
-							self.out_buffer_full.store(self.unacknowledged_seq_num.len() >= self.config.k as usize, std::sync::atomic::Ordering::Relaxed);
-							self.t1_i.as_mut().reset(self.unacknowledged_seq_num.front().map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.t1));
+						ReceiveHandlerCommand::Asdu { asdu, reply } => {
+							let ack = self.enqueue_incoming_asdu(asdu).await?;
+							let _ = reply.send(ack);
 						}
 						ReceiveHandlerCommand::Stop => {
 							send_frame(&mut self.write_connection, &STOP_DT_ACT_FRAME).await.whatever_context("Error sending stopDT activation")?;
@@ -288,6 +312,25 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		}
 	}
 
+	/// Flush, enqueue `asdu`, flush again. Returns `Ok(Err(PendingBufferFull))`
+	/// when the pending queue is at
+	/// [`ProtocolConfig::max_pending_outgoing_asdu`](crate::config::ProtocolConfig::max_pending_outgoing_asdu);
+	/// returns `Err(Error)` on wire/protocol failure.
+	async fn enqueue_incoming_asdu(&mut self, asdu: Asdu) -> Result<SendAsduCommandAck, Error> {
+		self.flush_pending_outgoing().await.whatever_context("Error sending queued ASDUs")?;
+
+		if let Some(limit) = self.config.max_pending_outgoing_asdu_limit()
+			&& self.pending_outgoing_asdu.len() >= limit
+		{
+			return Ok(Err(SendAsduQueueError::PendingBufferFull));
+		}
+
+		self.pending_outgoing_asdu.push_back(asdu);
+		self.flush_pending_outgoing().await.whatever_context("Error sending queued ASDUs")?;
+
+		Ok(Ok(()))
+	}
+
 	#[instrument(level = "debug")]
 	async fn handle_send_asdu(
 		asdu: Asdu,
@@ -298,6 +341,10 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		k: u16,
 		unacknowledged_rcv_frames: &mut u16,
 	) -> Result<(), Error> {
+		if unacknowledged_seq_num.len() >= k as usize {
+			whatever!("internal error: I-format send requested with full k window");
+		}
+
 		let frame = Frame::I(IFrame {
 			send_sequence_number: *sent_counter,
 			receive_sequence_number: received_counter,
@@ -308,12 +355,7 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 
 		// The modulo is to avoid overflow
 		*sent_counter = (*sent_counter + 1) % 32768;
-
-		if unacknowledged_seq_num.len() < k as usize {
-			unacknowledged_seq_num.push_back((*sent_counter, Instant::now()));
-		} else {
-			whatever!("Unacknowledged sequence number is full. Closing connection");
-		}
+		unacknowledged_seq_num.push_back((*sent_counter, Instant::now()));
 
 		*unacknowledged_rcv_frames = 0;
 
@@ -338,10 +380,8 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		)
 		.whatever_context("Error checking sequence acknowledge")?;
 
-		self.out_buffer_full.store(
-			self.unacknowledged_seq_num.len() >= self.config.k as usize,
-			std::sync::atomic::Ordering::Relaxed,
-		);
+		self.out_buffer_full
+			.store(self.unacknowledged_seq_num.len() >= self.config.k as usize, Ordering::Relaxed);
 
 		self.t1_i.as_mut().reset(
 			self.unacknowledged_seq_num
@@ -366,11 +406,45 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		)
 		.whatever_context("Error checking sequence acknowledge")?;
 
-		self.out_buffer_full.store(
-			self.unacknowledged_seq_num.len() >= self.config.k as usize,
-			std::sync::atomic::Ordering::Relaxed,
-		);
+		self.out_buffer_full
+			.store(self.unacknowledged_seq_num.len() >= self.config.k as usize, Ordering::Relaxed);
 
+		self.t1_i.as_mut().reset(
+			self.unacknowledged_seq_num
+				.front()
+				.map_or(Instant::now() + *TIMER_UNSET, |(_, time)| *time + self.config.t1),
+		);
+		Ok(())
+	}
+
+	/// Sends as many queued [`Asdu`]s as the `k` window allows.
+	///
+	/// Each [`Self::send_one_asdu`] adds an entry to `unacknowledged_seq_num`,
+	/// so the `len < k` check becomes false once the window is full even if
+	/// the deque still has items.
+	#[instrument(level = "debug", skip_all)]
+	async fn flush_pending_outgoing(&mut self) -> Result<(), Error> {
+		while self.unacknowledged_seq_num.len() < self.config.k as usize
+			&& let Some(asdu) = self.pending_outgoing_asdu.pop_front()
+		{
+			self.send_one_asdu(asdu).await?;
+		}
+		Ok(())
+	}
+
+	async fn send_one_asdu(&mut self, asdu: Asdu) -> Result<(), Error> {
+		Self::handle_send_asdu(
+			asdu,
+			&mut self.sent_counter,
+			self.received_counter,
+			self.write_connection,
+			&mut self.unacknowledged_seq_num,
+			self.config.k,
+			&mut self.unacknowledged_rcv_frames,
+		)
+		.await?;
+		self.out_buffer_full
+			.store(self.unacknowledged_seq_num.len() >= self.config.k as usize, Ordering::Relaxed);
 		self.t1_i.as_mut().reset(
 			self.unacknowledged_seq_num
 				.front()

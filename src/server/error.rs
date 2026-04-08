@@ -40,4 +40,17 @@ pub enum ServerError {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
+	/// Receive-handler task ended or dropped before acknowledging an ASDU
+	/// enqueue.
+	ReceiveHandlerAsduAck {
+		source: oneshot::error::RecvError,
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
+	/// Per-connection pending outgoing queue is full
+	/// ([`crate::config::ProtocolConfig::max_pending_outgoing_asdu`]).
+	PendingOutgoingAsduBufferFull {
+		#[snafu(implicit)]
+		context: Box<SpanTraceWrapper>,
+	},
 }
