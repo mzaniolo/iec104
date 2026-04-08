@@ -13,6 +13,13 @@
 //! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
 //! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
 //!
+//! **System ASDUs** (`C_TS_*`, `C_RD_NA_1`, `C_CS_NA_1`, `C_CI_NA_1`, …): build
+//! [`RtuSystemHandlers`] (defaults or custom [`Arc`] per
+//! [`RtuTestSystemHandler`], [`RtuReadSystemHandler`],
+//! [`RtuClockSyncSystemHandler`], [`RtuCounterInterrogationHandler`]).
+//! [`RtuServer::start`] uses [`RtuSystemHandlers::default`]; use
+//! [`RtuServer::start_with_system_handlers`] to customize.
+//!
 //! The point set can be changed at runtime with
 //! [`RtuServerHandle::register_point`], [`RtuServerHandle::register_points`],
 //! [`RtuServerHandle::unregister_point`], and
@@ -27,6 +34,7 @@ mod commands;
 mod error;
 mod model;
 mod output;
+mod system_command_handler;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -36,6 +44,12 @@ pub use command_handler::{
 pub use command_presets::MapCommandsToSameIoaMonitoring;
 pub use error::{RtuHandleError, SetPointError};
 pub use model::{PointAddress, PointValue};
+pub use system_command_handler::{
+	DefaultRtuClockSyncSystemHandler, DefaultRtuCounterInterrogationHandler,
+	DefaultRtuReadSystemHandler, DefaultRtuTestSystemHandler, RtuClockSyncSystemHandler,
+	RtuCounterInterrogationHandler, RtuReadSystemHandler, RtuSystemHandlers, RtuTestSystemHandler,
+	SystemCommandContext,
+};
 
 use crate::{config::ServerConfig, error::Error};
 
@@ -50,17 +64,44 @@ pub struct RtuServer(());
 impl RtuServer {
 	/// Bind and accept connections, spawn the model actor, and return a
 	/// [`RtuServerHandle`].
+	///
+	/// Uses [`RtuSystemHandlers::default`] for test, read, clock sync, and
+	/// counter interrogation ASDUs. Override via
+	/// [`Self::start_with_system_handlers`].
 	pub async fn start(
 		config: ServerConfig,
 		initial_points: impl IntoIterator<Item = (PointAddress, PointValue)>,
 		command_handler: Arc<dyn RtuCommandHandler>,
+	) -> Result<RtuServerHandle, Error> {
+		Self::start_with_system_handlers(
+			config,
+			initial_points,
+			command_handler,
+			RtuSystemHandlers::default(),
+		)
+		.await
+	}
+
+	/// Like [`Self::start`], but supplies custom [`RtuSystemHandlers`] (e.g.
+	/// replace one [`Arc`] field or use [`RtuSystemHandlers::with_read`]).
+	pub async fn start_with_system_handlers(
+		config: ServerConfig,
+		initial_points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+		command_handler: Arc<dyn RtuCommandHandler>,
+		system_handlers: RtuSystemHandlers,
 	) -> Result<RtuServerHandle, Error> {
 		let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 		let ingress = actor::NetworkIngress::new(tx.clone());
 		let server = crate::server::Server::start(config, ingress).await?;
 		let model: HashMap<PointAddress, PointValue> = initial_points.into_iter().collect();
 		let server_for_actor = server.clone();
-		tokio::spawn(actor::run_actor(rx, server_for_actor, model, command_handler));
+		tokio::spawn(actor::run_actor(
+			rx,
+			server_for_actor,
+			model,
+			command_handler,
+			system_handlers,
+		));
 		Ok(RtuServerHandle { tx })
 	}
 }
