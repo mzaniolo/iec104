@@ -10,12 +10,13 @@ use super::{
 	error::{InterrogationError, SetPointError},
 	model::{PointAddress, PointValue},
 	output::{interrogation_data_asdus, spontaneous_asdu},
+	system_command_handler::{RtuSystemHandlers, SystemCommandContext, is_system_command_cot},
 };
 use crate::{
 	asdu::Asdu,
 	cot::Cot,
-	server::{ConnectionId, Server, ServerCallback},
-	types::{CIcNa1, GenericObject, InformationObjects, commands::Qoi},
+	server::{ConnectionId, Server, ServerCallback, error::ServerError},
+	types::{CIcNa1, GenericObject, InformationObjects, commands::Qoi, time::Cp56Time2a},
 	types_id::TypeId,
 };
 
@@ -82,7 +83,9 @@ pub(super) async fn run_actor(
 	server: Server,
 	mut model: HashMap<PointAddress, PointValue>,
 	command_handler: Arc<dyn RtuCommandHandler>,
+	system_handlers: RtuSystemHandlers,
 ) {
+	let mut last_master_clock: Option<Cp56Time2a> = None;
 	while let Some(msg) = rx.recv().await {
 		match msg {
 			ActorMsg::SetPoint { address, value, reply } => {
@@ -121,6 +124,8 @@ pub(super) async fn run_actor(
 					&mut model,
 					&server,
 					&command_handler,
+					&system_handlers,
+					&mut last_master_clock,
 					asdu,
 					connection_id,
 					peer,
@@ -173,33 +178,83 @@ async fn handle_set_point(
 	Ok(())
 }
 
+async fn dispatch_rtu_system_handler(
+	handlers: &RtuSystemHandlers,
+	type_id: TypeId,
+	ctx: &mut SystemCommandContext<'_>,
+	server: &Server,
+) -> Result<(), ServerError> {
+	match type_id {
+		TypeId::C_TS_NA_1 | TypeId::C_TS_TA_1 => handlers.test.handle_test(ctx, server).await,
+		TypeId::C_RD_NA_1 => handlers.read.handle_read(ctx, server).await,
+		TypeId::C_CS_NA_1 => handlers.clock_sync.handle_clock_sync(ctx, server).await,
+		TypeId::C_CI_NA_1 => {
+			handlers.counter_interrogation.handle_counter_interrogation(ctx, server).await
+		}
+		_ => Ok(()),
+	}
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn handle_ingress_asdu(
 	model: &mut HashMap<PointAddress, PointValue>,
 	server: &Server,
 	command_handler: &Arc<dyn RtuCommandHandler>,
+	system_handlers: &RtuSystemHandlers,
+	last_master_clock: &mut Option<Cp56Time2a>,
 	asdu: Asdu,
 	connection_id: ConnectionId,
 	peer: SocketAddr,
 ) {
-	match commands::try_handle_commands(model, server, &asdu, connection_id, peer, command_handler)
-		.await
-	{
-		Ok(true) => return,
-		Ok(false) => {}
-		Err(e) => {
-			tracing::error!(error = ?e, ?peer, "command handling (send confirmation or broadcast)");
-			return;
-		}
-	}
+	let sys_cot = is_system_command_cot(asdu.cot);
 
-	if asdu.type_id == TypeId::C_IC_NA_1 {
-		match handle_interrogation(model, server, &asdu, connection_id).await {
-			Ok(()) => return,
-			Err(InterrogationError::Skipped) => {}
-			Err(e) => tracing::error!(error = %e, ?peer, "interrogation handling"),
+	match asdu.type_id {
+		_ if commands::is_process_command(&asdu) => {
+			if let Err(e) = commands::handle_process_command(
+				model,
+				server,
+				&asdu,
+				connection_id,
+				peer,
+				command_handler,
+			)
+			.await
+			{
+				tracing::error!(error = ?e, ?peer, "process command handling");
+			}
+		}
+		tid @ (TypeId::C_TS_NA_1
+		| TypeId::C_TS_TA_1
+		| TypeId::C_RD_NA_1
+		| TypeId::C_CS_NA_1
+		| TypeId::C_CI_NA_1)
+			if sys_cot =>
+		{
+			let mut ctx =
+				SystemCommandContext { connection_id, peer, asdu: &asdu, model, last_master_clock };
+			if let Err(e) =
+				dispatch_rtu_system_handler(system_handlers, tid, &mut ctx, server).await
+			{
+				tracing::error!(error = ?e, ?peer, type_id = ?tid, "system command handling");
+			}
+		}
+		TypeId::C_IC_NA_1 => {
+			match handle_interrogation(model, server, &asdu, connection_id).await {
+				Ok(()) => {}
+				Err(InterrogationError::Skipped) => {
+					tracing::trace!(
+						?peer,
+						type_id = ?asdu.type_id,
+						"general interrogation skipped"
+					);
+				}
+				Err(e) => tracing::error!(error = %e, ?peer, "interrogation handling"),
+			}
+		}
+		_ => {
+			tracing::trace!(?peer, type_id = ?asdu.type_id, "ingress ASDU (no handler)");
 		}
 	}
-	tracing::trace!(?peer, type_id = ?asdu.type_id, "ingress ASDU (no handler)");
 }
 
 async fn handle_interrogation(

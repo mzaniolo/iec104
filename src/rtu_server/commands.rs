@@ -21,6 +21,12 @@ const fn is_command_cot(cot: Cot) -> bool {
 	matches!(cot, Cot::Request | Cot::Activation)
 }
 
+/// `C_SC_*` / `C_SE_*` with [`Cot::Request`] or [`Cot::Activation`].
+#[must_use]
+pub(super) const fn is_process_command(asdu: &Asdu) -> bool {
+	is_command_cot(asdu.cot) && is_supported_command_type(asdu.type_id)
+}
+
 #[must_use]
 pub(super) const fn is_supported_command_type(type_id: TypeId) -> bool {
 	matches!(
@@ -54,7 +60,7 @@ const fn command_confirmation_asdu(
 	}
 }
 
-async fn send_confirmation(
+pub(super) async fn send_activation_confirmation(
 	server: &Server,
 	connection_id: ConnectionId,
 	incoming: &Asdu,
@@ -93,23 +99,16 @@ async fn apply_model_updates(
 	Ok(())
 }
 
-/// Returns `Ok(true)` if this was a supported command type and a confirmation
-/// was sent.
-pub(super) async fn try_handle_commands(
+/// Handle a process command ASDU. Call only when [`is_process_command`] is
+/// true.
+pub(super) async fn handle_process_command(
 	model: &mut HashMap<PointAddress, PointValue>,
 	server: &Server,
 	asdu: &Asdu,
 	connection_id: ConnectionId,
 	peer: SocketAddr,
 	handler: &Arc<dyn RtuCommandHandler>,
-) -> Result<bool, ServerError> {
-	if !is_command_cot(asdu.cot) {
-		return Ok(false);
-	}
-	if !is_supported_command_type(asdu.type_id) {
-		return Ok(false);
-	}
-
+) -> Result<(), ServerError> {
 	let handling = {
 		let ctx = CommandContext { connection_id, peer, asdu, model: &*model };
 		handler.handle_command(ctx).await
@@ -119,7 +118,7 @@ pub(super) async fn try_handle_commands(
 		apply_model_updates(model, server, &handling.apply_updates).await?;
 	}
 
-	send_confirmation(
+	send_activation_confirmation(
 		server,
 		connection_id,
 		asdu,
@@ -128,5 +127,5 @@ pub(super) async fn try_handle_commands(
 		handling.negative,
 	)
 	.await?;
-	Ok(true)
+	Ok(())
 }

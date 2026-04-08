@@ -14,6 +14,14 @@ use crate::{
 /// Maximum number of information objects per ASDU (7-bit count field).
 pub(super) const MAX_OBJECTS_PER_ASDU: usize = 127;
 
+/// Monitoring ASDU with [`Cot::Request`] (typical response to `C_RD_NA_1`).
+#[must_use]
+pub(super) fn monitoring_asdu_requested(address: PointAddress, value: &PointValue) -> Asdu {
+	let mut a = spontaneous_asdu(address, value);
+	a.cot = Cot::Request;
+	a
+}
+
 pub(super) fn spontaneous_asdu(address: PointAddress, value: &PointValue) -> Asdu {
 	let ca = address.common_address;
 	let ioa = address.information_object_address;
