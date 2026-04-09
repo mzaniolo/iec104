@@ -35,6 +35,7 @@ mod commands;
 mod error;
 mod model;
 mod output;
+mod point_value;
 mod system_command_handler;
 
 use std::{collections::HashMap, sync::Arc};
