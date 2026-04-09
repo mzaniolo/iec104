@@ -21,7 +21,8 @@ const fn is_command_cot(cot: Cot) -> bool {
 	matches!(cot, Cot::Request | Cot::Activation)
 }
 
-/// `C_SC_*` / `C_SE_*` with [`Cot::Request`] or [`Cot::Activation`].
+/// Process commands (`C_SC_*`, `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`) with
+/// [`Cot::Request`] or [`Cot::Activation`].
 #[must_use]
 pub(super) const fn is_process_command(asdu: &Asdu) -> bool {
 	is_command_cot(asdu.cot) && is_supported_command_type(asdu.type_id)
@@ -32,13 +33,19 @@ pub(super) const fn is_supported_command_type(type_id: TypeId) -> bool {
 	matches!(
 		type_id,
 		TypeId::C_SC_NA_1
-			| TypeId::C_SC_TA_1
+			| TypeId::C_DC_NA_1
+			| TypeId::C_RC_NA_1
 			| TypeId::C_SE_NA_1
 			| TypeId::C_SE_NB_1
 			| TypeId::C_SE_NC_1
+			| TypeId::C_BO_NA_1
+			| TypeId::C_SC_TA_1
+			| TypeId::C_DC_TA_1
+			| TypeId::C_RC_TA_1
 			| TypeId::C_SE_TA_1
 			| TypeId::C_SE_TB_1
 			| TypeId::C_SE_TC_1
+			| TypeId::C_BO_TA_1
 	)
 }
 
