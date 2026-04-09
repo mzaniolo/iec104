@@ -2,8 +2,9 @@
 //! into one actor task, built on [`crate::server::Server`] and
 //! [`crate::server::ServerCallback`].
 //!
-//! Monitoring types: `M_SP_NA_1`, `M_DP_NA_1`, `M_ST_NA_1`, `M_BO_NA_1`,
-//! `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1`.
+//! Monitoring points cover IEC 60870-5-104 process information in Type ID range
+//! 1–40 (see [`crate::types_id::TypeId`]: `M_SP_*`, `M_DP_*`, `M_ST_*`,
+//! `M_BO_*`, `M_ME_*`, `M_IT_*`, `M_EP_*`, `M_PS_NA_1`, `M_ME_ND_1`, etc.).
 //! General interrogation: `C_IC_NA_1` (activation → confirmation +
 //! interrogation data on the same connection).
 //!
