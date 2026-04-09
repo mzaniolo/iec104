@@ -2,14 +2,15 @@
 //! into one actor task, built on [`crate::server::Server`] and
 //! [`crate::server::ServerCallback`].
 //!
-//! Monitoring types: `M_SP_NA_1`, `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1`.
+//! Monitoring types: `M_SP_NA_1`, `M_DP_NA_1`, `M_ST_NA_1`, `M_BO_NA_1`,
+//! `M_ME_NA_1`, `M_ME_NB_1`, `M_ME_NC_1`.
 //! General interrogation: `C_IC_NA_1` (activation → confirmation +
 //! interrogation data on the same connection).
 //!
-//! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*` /
-//! `C_SE_*` types): the standard defines the telegram, not what it must do in
-//! your plant. You supply an [`RtuCommandHandler`] that returns activation
-//! confirmation (echo / negative) and optional
+//! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*`,
+//! `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`): the standard defines the telegram,
+//! not what it must do in your plant. You supply an [`RtuCommandHandler`] that
+//! returns activation confirmation (echo / negative) and optional
 //! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
 //! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
 //!
