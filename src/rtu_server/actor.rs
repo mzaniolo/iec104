@@ -9,7 +9,10 @@ use super::{
 	commands,
 	error::{InterrogationError, SetPointError},
 	model::{PointAddress, PointValue},
-	output::{interrogation_data_asdus, spontaneous_asdu},
+	output::{
+		end_of_initialization_asdu, interrogation_data_asdus, spontaneous_asdu,
+		station_common_address,
+	},
 	system_command_handler::{RtuSystemHandlers, SystemCommandContext, is_system_command_cot},
 };
 use crate::{
@@ -47,6 +50,10 @@ pub(crate) enum ActorMsg {
 	UnregisterAll {
 		reply: tokio::sync::oneshot::Sender<usize>,
 	},
+	/// TCP + STARTDT completed; send [`TypeId::M_EI_NA_1`] to this peer.
+	ConnectionStarted {
+		connection_id: ConnectionId,
+	},
 }
 
 /// Failure for a bulk register (actor-internal; mapped to
@@ -75,6 +82,10 @@ impl NetworkIngress {
 impl ServerCallback for NetworkIngress {
 	async fn on_new_objects(&self, asdu: Asdu, connection_id: ConnectionId, peer: SocketAddr) {
 		let _ = self.tx.send(ActorMsg::IngressAsdu { asdu, connection_id, peer });
+	}
+
+	async fn on_connection_started(&self, connection_id: ConnectionId, _address: SocketAddr) {
+		let _ = self.tx.send(ActorMsg::ConnectionStarted { connection_id });
 	}
 }
 
@@ -132,6 +143,9 @@ pub(super) async fn run_actor(
 				)
 				.await;
 			}
+			ActorMsg::ConnectionStarted { connection_id } => {
+				send_end_of_initialization(&model, &server, connection_id).await;
+			}
 		}
 	}
 	tracing::warn!("RTU actor channel closed; stopping model loop");
@@ -155,6 +169,22 @@ fn try_register_points(
 	}
 	model.extend(points);
 	Ok(())
+}
+
+async fn send_end_of_initialization(
+	model: &HashMap<PointAddress, PointValue>,
+	server: &Server,
+	connection_id: ConnectionId,
+) {
+	let ca = station_common_address(model);
+	let asdu = end_of_initialization_asdu(ca);
+	if let Err(e) = server.send_asdu(connection_id, asdu).await {
+		tracing::warn!(
+			error = ?e,
+			?connection_id,
+			"failed to send M_EI_NA_1 (end of initialization)"
+		);
+	}
 }
 
 async fn handle_set_point(

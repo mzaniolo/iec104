@@ -15,6 +15,11 @@
 //! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
 //! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
 //!
+//! After each TCP connection completes **STARTDT**, the RTU sends
+//! [`crate::types_id::TypeId::M_EI_NA_1`] (end of initialization) on that link
+//! before other monitoring traffic (common address from the point model, or `0`
+//! if empty).
+//!
 //! **System ASDUs** (`C_TS_*`, `C_RD_NA_1`, `C_CS_NA_1`, `C_CI_NA_1`, …): build
 //! [`RtuSystemHandlers`] (defaults or custom [`Arc`] per
 //! [`RtuTestSystemHandler`], [`RtuReadSystemHandler`],

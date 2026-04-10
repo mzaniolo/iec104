@@ -9,9 +9,9 @@ use crate::{
 	cot::Cot,
 	types::{
 		FromBytes, GenericObject, InformationObjects, MBoNa1, MBoTb1, MDpNa1, MDpTa1, MDpTb1,
-		MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1, MMeNb1, MMeNc1,
-		MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1, MSpTa1, MSpTb1,
-		MStNa1, MStTa1, MStTb1, ToBytes,
+		MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1, MMeNb1,
+		MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1, MSpTa1,
+		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes,
 	},
 	types_id::TypeId,
 };
@@ -68,6 +68,37 @@ pub(super) fn spontaneous_asdu(address: PointAddress, value: &PointValue) -> Asd
 		negative: false,
 		information_objects,
 	}
+}
+
+/// [`TypeId::M_EI_NA_1`] (end of initialization) after local startup — not a
+/// process point.
+///
+/// Uses [`Cot::Initiated`], IOA `0`, and default [`MEiNa1`]
+/// (`Coi::LocalPowerOn`). `common_address` is the ASDU common address field
+/// (station); use [`station_common_address`] when deriving it from
+/// the point model.
+#[must_use]
+pub(super) fn end_of_initialization_asdu(common_address: u16) -> Asdu {
+	Asdu {
+		type_id: TypeId::M_EI_NA_1,
+		cot: Cot::Initiated,
+		originator_address: 0,
+		address_field: common_address,
+		sequence: false,
+		test: false,
+		negative: false,
+		information_objects: InformationObjects::MEiNa1(vec![GenericObject {
+			address: 0,
+			object: MEiNa1::default(),
+		}]),
+	}
+}
+
+/// Smallest [`PointAddress::common_address`] among points, or `0` if the model
+/// is empty.
+#[must_use]
+pub(super) fn station_common_address(model: &HashMap<PointAddress, PointValue>) -> u16 {
+	model.keys().map(|a| a.common_address).min().unwrap_or(0)
 }
 
 /// General-interrogation data ASDUs for one common address. Buckets must match
