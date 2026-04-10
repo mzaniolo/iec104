@@ -6,7 +6,7 @@
 //! 1–40 (see [`crate::types_id::TypeId`]: `M_SP_*`, `M_DP_*`, `M_ST_*`,
 //! `M_BO_*`, `M_ME_*`, `M_IT_*`, `M_EP_*`, `M_PS_NA_1`, `M_ME_ND_1`, etc.).
 //! General interrogation: `C_IC_NA_1` (activation → confirmation +
-//! interrogation data on the same connection).
+//! interrogation data → activation termination on the same connection).
 //!
 //! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*`,
 //! `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`): the standard defines the telegram,
