@@ -332,5 +332,23 @@ async fn handle_interrogation(
 			.await
 			.map_err(|source| InterrogationError::SendData { source })?;
 	}
+
+	let actterm = Asdu {
+		type_id: TypeId::C_IC_NA_1,
+		cot: Cot::ActivationTermination,
+		originator_address: asdu.originator_address,
+		address_field: asdu.address_field,
+		sequence: asdu.sequence,
+		test: asdu.test,
+		negative: false,
+		information_objects: InformationObjects::CIcNa1(vec![GenericObject {
+			address: go.address,
+			object: CIcNa1 { qoi },
+		}]),
+	};
+	server
+		.send_asdu(connection_id, actterm)
+		.await
+		.map_err(|source| InterrogationError::SendTermination { source })?;
 	Ok(())
 }

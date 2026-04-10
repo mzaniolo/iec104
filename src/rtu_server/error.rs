@@ -67,4 +67,6 @@ pub(crate) enum InterrogationError {
 	SendConfirmation { source: ServerError },
 	#[snafu(display("failed to send interrogation data ASDU: {source}"))]
 	SendData { source: ServerError },
+	#[snafu(display("failed to send interrogation activation termination: {source}"))]
+	SendTermination { source: ServerError },
 }
