@@ -15,8 +15,13 @@ keywords = [
     "iec60870-5-104",
     "60870-5-104",
     "iec104",
-    "SCADA"
+    "SCADA",
 ]
+
+[features]
+chrono = ["dep:chrono"]
+
+default = ["chrono"]
 
 [dependencies]
 async-trait = "0.1.88"
@@ -43,12 +48,8 @@ tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["signal"] }
-
-[features]
-chrono = ["dep:chrono"]
-
-default = ["chrono"]
+async-trait = "0.1.88"
+tokio = { version = "1.47.0", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [lints.rust]
 dead_code = "warn"

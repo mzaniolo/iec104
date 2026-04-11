@@ -111,6 +111,28 @@ impl Server {
 		});
 		Ok(Self { tx })
 	}
+
+	/// Like [`Self::start`], but also returns the socket address the TCP
+	/// listener bound to (for example after setting
+	/// [`crate::config::ServerConfig::port`] to `0` for an ephemeral port).
+	pub async fn start_with_listen_addr<C: ServerCallback + Send + Sync + 'static>(
+		config: ServerConfig,
+		callback: C,
+	) -> Result<(Self, SocketAddr), Error> {
+		let (tx, rx) = mpsc::channel(1024);
+		let inner_server = InnerServer::connect(config, Arc::new(callback), rx).await?;
+		let listen_addr = inner_server
+			.listen_local_addr()
+			.with_whatever_context(|e| format!("Unable to read listener local address: {e}"))?;
+		tokio::spawn(async move {
+			let _ = inner_server
+				.start()
+				.await
+				.inspect_err(|e| tracing::error!("Error in running server: {e}"));
+		});
+		Ok((Self { tx }, listen_addr))
+	}
+
 	pub async fn send_asdu(&self, id: ConnectionId, asdu: Asdu) -> Result<(), error::ServerError> {
 		let (tx, rx) = oneshot::channel();
 		self.tx
@@ -157,6 +179,11 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 			.transpose()?;
 		Ok(Self { callback, config, connections: HashMap::new(), rx, acceptor, listener })
 	}
+
+	fn listen_local_addr(&self) -> std::io::Result<SocketAddr> {
+		self.listener.local_addr()
+	}
+
 	async fn start(mut self) -> Result<(), Error> {
 		let (closed_tx, mut closed_rx) = mpsc::unbounded_channel::<ConnectionId>();
 		let mut next_id = ConnectionId::new();

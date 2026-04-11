@@ -46,6 +46,10 @@
 //! [`RtuServer::start`] uses [`RtuSystemHandlers::default`]; use
 //! [`RtuServer::start_with_system_handlers`] to customize.
 //!
+//! For integration tests or tools that need an ephemeral TCP port, see
+//! [`start_rtu_server_ephemeral`] and
+//! [`crate::server::Server::start_with_listen_addr`].
+//!
 //! The point set can be changed at runtime with
 //! [`RtuServerHandle::register_point`],
 //! [`RtuServerHandle::register_point_with_interrogation_group`],
@@ -192,6 +196,38 @@ impl RtuServer {
 		));
 		Ok(RtuServerHandle { tx })
 	}
+}
+
+/// Starts an RTU on **`127.0.0.1:0`** (ephemeral port) and returns the bound
+/// socket address for wiring a [`crate::client::Client`].
+///
+/// `server_config` supplies [`ProtocolConfig`](crate::config::ProtocolConfig)
+/// and TLS; **address and port are overwritten** for the ephemeral bind.
+pub async fn start_rtu_server_ephemeral(
+	mut server_config: ServerConfig,
+	initial_points: impl IntoIterator<Item = impl Into<RtuInitialPoint>>,
+	command_handler: Arc<dyn RtuCommandHandler>,
+	system_handlers: RtuSystemHandlers,
+) -> Result<(RtuServerHandle, std::net::SocketAddr), Error> {
+	server_config.address = "127.0.0.1".into();
+	server_config.port = 0;
+	let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+	let ingress = actor::NetworkIngress::new(tx.clone());
+	let (server, listen_addr) =
+		crate::server::Server::start_with_listen_addr(server_config, ingress).await?;
+	let RtuInitialMaps { points, interrogation_groups, counter_groups } =
+		build_rtu_initial_maps(initial_points)?;
+	let server_for_actor = server.clone();
+	tokio::spawn(actor::run_actor(
+		rx,
+		server_for_actor,
+		points,
+		interrogation_groups,
+		counter_groups,
+		command_handler,
+		system_handlers,
+	));
+	Ok((RtuServerHandle { tx }, listen_addr))
 }
 
 /// `Clone` handle for updates from any task (e.g. NATS subscriber). Sends into
