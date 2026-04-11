@@ -282,6 +282,7 @@ async fn dispatch_rtu_system_handler(
 		TypeId::C_CI_NA_1 => {
 			handlers.counter_interrogation.handle_counter_interrogation(ctx, server).await
 		}
+		TypeId::C_RP_NA_1 => handlers.reset_process.handle_reset_process(ctx, server).await,
 		_ => Ok(()),
 	}
 }
@@ -319,7 +320,8 @@ async fn handle_ingress_asdu(
 		| TypeId::C_TS_TA_1
 		| TypeId::C_RD_NA_1
 		| TypeId::C_CS_NA_1
-		| TypeId::C_CI_NA_1)
+		| TypeId::C_CI_NA_1
+		| TypeId::C_RP_NA_1)
 			if sys_cot =>
 		{
 			let mut ctx =

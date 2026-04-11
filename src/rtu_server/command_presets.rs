@@ -8,11 +8,14 @@
 //! often use different IOA layouts and side-effects; prefer a custom
 //! [`super::command_handler::RtuCommandHandler`] for production.
 
+use std::collections::HashMap;
+
 use super::{
 	command_handler::{CommandContext, CommandHandling, RtuCommandHandler},
 	model::{PointAddress, PointValue},
 };
 use crate::{
+	cot::Cot,
 	types::{
 		GenericObject, InformationObjects, commands::Rcs, information_elements::SelectExecute,
 	},
@@ -73,9 +76,95 @@ macro_rules! same_ioa_plan {
 pub struct MapCommandsToSameIoaMonitoring;
 
 #[allow(clippy::too_many_lines)]
+#[must_use]
+fn all_command_ioas_in_model(
+	ca: u16,
+	model: &HashMap<PointAddress, PointValue>,
+	mut ioas: impl Iterator<Item = u32>,
+) -> bool {
+	ioas.all(|ioa| model.contains_key(&PointAddress::new(ca, ioa)))
+}
+
+/// Select cancel: positive deactivation confirmation if every command IOA
+/// exists for the ASDU common address; no process-image updates.
+fn same_ioa_deactivation_echo(ctx: CommandContext<'_>) -> CommandHandling {
+	use crate::types::InformationObjects as IO;
+	let ca = ctx.asdu.address_field;
+
+	let (negative, reply_ios) = match (ctx.asdu.type_id, &ctx.asdu.information_objects) {
+		(TypeId::C_SC_NA_1, IO::CScNa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CScNa1(objs.clone()),
+		),
+		(TypeId::C_SC_TA_1, IO::CScTa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CScTa1(objs.clone()),
+		),
+		(TypeId::C_DC_NA_1, IO::CdcNa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CdcNa1(objs.clone()),
+		),
+		(TypeId::C_DC_TA_1, IO::CdcTa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CdcTa1(objs.clone()),
+		),
+		(TypeId::C_RC_NA_1, IO::CrcNa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CrcNa1(objs.clone()),
+		),
+		(TypeId::C_RC_TA_1, IO::CrcTa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CrcTa1(objs.clone()),
+		),
+		(TypeId::C_SE_NA_1, IO::CSeNa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeNa1(objs.clone()),
+		),
+		(TypeId::C_SE_TA_1, IO::CSeTa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeTa1(objs.clone()),
+		),
+		(TypeId::C_SE_NB_1, IO::CSeNb1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeNb1(objs.clone()),
+		),
+		(TypeId::C_SE_TB_1, IO::CSeTb1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeTb1(objs.clone()),
+		),
+		(TypeId::C_SE_NC_1, IO::CSeNc1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeNc1(objs.clone()),
+		),
+		(TypeId::C_SE_TC_1, IO::CSeTc1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CSeTc1(objs.clone()),
+		),
+		(TypeId::C_BO_NA_1, IO::CBoNa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CBoNa1(objs.clone()),
+		),
+		(TypeId::C_BO_TA_1, IO::CBoTa1(objs)) => (
+			!all_command_ioas_in_model(ca, ctx.model, objs.iter().map(|g| g.address)),
+			IO::CBoTa1(objs.clone()),
+		),
+		_ => return echo_reject(ctx),
+	};
+	CommandHandling {
+		negative,
+		reply_type_id: ctx.asdu.type_id,
+		reply_information_objects: reply_ios,
+		apply_updates: Vec::new(),
+	}
+}
+
+#[allow(clippy::too_many_lines)]
 #[async_trait::async_trait]
 impl RtuCommandHandler for MapCommandsToSameIoaMonitoring {
 	async fn handle_command(&self, ctx: CommandContext<'_>) -> CommandHandling {
+		if matches!(ctx.asdu.cot, Cot::Deactivation) {
+			return same_ioa_deactivation_echo(ctx);
+		}
 		match ctx.asdu.type_id {
 			TypeId::C_SC_NA_1 => {
 				same_ioa_plan!(ctx, CScNa1, TypeId::C_SC_NA_1, CScNa1, addr, cmd, pv, negative, apply_updates =>

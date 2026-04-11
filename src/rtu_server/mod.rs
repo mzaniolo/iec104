@@ -17,22 +17,26 @@
 //! confirmation → interrogation data → activation termination when data is
 //! supported.
 //!
-//! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*`,
-//! `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`): the standard defines the telegram,
-//! not what it must do in your plant. You supply an [`RtuCommandHandler`] that
-//! returns activation confirmation (echo / negative) and optional
-//! [`CommandHandling::apply_updates`]. For a test-style “command IOA = monitor
-//! IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
+//! **Commands** ([`Cot::Request`](crate::cot::Cot::Request),
+//! [`Cot::Activation`](crate::cot::Cot::Activation), or
+//! [`Cot::Deactivation`](crate::cot::Cot::Deactivation) for
+//! supported `C_SC_*`, `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`): the standard
+//! defines the telegram, not what it must do in your plant. You supply an
+//! [`RtuCommandHandler`] that returns confirmation (echo / negative) and
+//! optional [`CommandHandling::apply_updates`]; replies use activation or
+//! deactivation confirmation COT per IEC 60870-5-104. For a test-style “command
+//! IOA = monitor IOA” mapping, see [`MapCommandsToSameIoaMonitoring`].
 //!
 //! After each TCP connection completes **STARTDT**, the RTU sends
 //! [`crate::types_id::TypeId::M_EI_NA_1`] (end of initialization) on that link
 //! before other monitoring traffic (common address from the point model, or `0`
 //! if empty).
 //!
-//! **System ASDUs** (`C_TS_*`, `C_RD_NA_1`, `C_CS_NA_1`, `C_CI_NA_1`, …): build
-//! [`RtuSystemHandlers`] (defaults or custom [`Arc`] per
+//! **System ASDUs** (`C_TS_*`, `C_RD_NA_1`, `C_CS_NA_1`, `C_CI_NA_1`,
+//! `C_RP_NA_1`, …): build [`RtuSystemHandlers`] (defaults or custom [`Arc`] per
 //! [`RtuTestSystemHandler`], [`RtuReadSystemHandler`],
-//! [`RtuClockSyncSystemHandler`], [`RtuCounterInterrogationHandler`]).
+//! [`RtuClockSyncSystemHandler`], [`RtuCounterInterrogationHandler`],
+//! [`RtuResetProcessSystemHandler`]).
 //! [`RtuServer::start`] uses [`RtuSystemHandlers::default`]; use
 //! [`RtuServer::start_with_system_handlers`] to customize.
 //!
@@ -68,9 +72,9 @@ pub use model::{PointAddress, PointValue, RtuInitialMaps, RtuInitialPoint};
 use snafu::whatever;
 pub use system_command_handler::{
 	DefaultRtuClockSyncSystemHandler, DefaultRtuCounterInterrogationHandler,
-	DefaultRtuReadSystemHandler, DefaultRtuTestSystemHandler, RtuClockSyncSystemHandler,
-	RtuCounterInterrogationHandler, RtuReadSystemHandler, RtuSystemHandlers, RtuTestSystemHandler,
-	SystemCommandContext,
+	DefaultRtuReadSystemHandler, DefaultRtuResetProcessSystemHandler, DefaultRtuTestSystemHandler,
+	RtuClockSyncSystemHandler, RtuCounterInterrogationHandler, RtuReadSystemHandler,
+	RtuResetProcessSystemHandler, RtuSystemHandlers, RtuTestSystemHandler, SystemCommandContext,
 };
 
 use crate::{config::ServerConfig, error::Error};

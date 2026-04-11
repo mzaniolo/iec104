@@ -27,16 +27,19 @@ pub struct CommandContext<'a> {
 	pub model: &'a HashMap<PointAddress, PointValue>,
 }
 
-/// Result of handling one command ASDU: activation confirmation payload and
-/// optional model updates.
+/// Result of handling one command ASDU: confirmation payload and optional model
+/// updates. The wire [`crate::cot::Cot`] for the reply is
+/// [`crate::cot::Cot::ActivationConfirmation`] or
+/// [`crate::cot::Cot::DeactivationConfirmation`] depending on the incoming
+/// command [`crate::cot::Cot`] (see
+/// [`super::commands::send_command_confirmation`]).
 #[derive(Debug, Clone)]
 pub struct CommandHandling {
 	/// `true` = negative confirm (e.g. unknown command or interlock).
 	pub negative: bool,
 	/// Usually the same as the incoming command `type_id`.
 	pub reply_type_id: TypeId,
-	/// Objects mirrored in the activation confirmation (typically echo of the
-	/// command).
+	/// Objects mirrored in the confirmation (typically echo of the command).
 	pub reply_information_objects: InformationObjects,
 	/// When [`Self::negative`] is `false`, each pair is applied like
 	/// [`super::RtuServerHandle::set_point`] (type must match the existing
