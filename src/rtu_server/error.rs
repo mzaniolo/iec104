@@ -47,6 +47,13 @@ pub enum RtuHandleError {
 	/// Interrogation group must be in **1..=16** (IEC 60870-5-101).
 	#[snafu(display("invalid interrogation group: {group} (expected 1..=16)"))]
 	InvalidInterrogationGroup { group: u8 },
+	/// Counter interrogation group must be in **1..=4** (IEC 60870-5-101).
+	#[snafu(display("invalid counter interrogation group: {group} (expected 1..=4)"))]
+	InvalidCounterInterrogationGroup { group: u8 },
+	/// [`super::model::PointValue::is_counter_integration`] is required when a
+	/// counter group is set.
+	#[snafu(display("counter interrogation group applies only to M_IT_* point values"))]
+	CounterGroupRequiresCounterPoint,
 	/// [`super::RtuServerHandle::set_point`](crate::rtu_server::RtuServerHandle::set_point) failed.
 	#[snafu(display("{source}"))]
 	SetPoint { source: SetPointError },

@@ -8,6 +8,9 @@ pub use super::point_value::PointValue;
 pub struct RtuInitialMaps {
 	pub points: HashMap<PointAddress, PointValue>,
 	pub interrogation_groups: HashMap<PointAddress, u8>,
+	/// Counter interrogation group **1..=4** per [`PointAddress`] (`C_CI_NA_1`
+	/// RQT).
+	pub counter_groups: HashMap<PointAddress, u8>,
 }
 
 /// Initial point for [`super::RtuServer::start`] /
@@ -22,12 +25,15 @@ pub struct RtuInitialPoint {
 	pub address: PointAddress,
 	pub value: PointValue,
 	pub interrogation_group: Option<u8>,
+	/// Counter interrogation group **1..=4**; only valid for integrated-total
+	/// points ([`PointValue::is_counter_integration`]).
+	pub counter_group: Option<u8>,
 }
 
 impl RtuInitialPoint {
 	#[must_use]
 	pub const fn new(address: PointAddress, value: PointValue) -> Self {
-		Self { address, value, interrogation_group: None }
+		Self { address, value, interrogation_group: None, counter_group: None }
 	}
 
 	/// `interrogation_group` must be in **1..=16** or this returns [`None`].
@@ -41,13 +47,29 @@ impl RtuInitialPoint {
 			address,
 			value,
 			interrogation_group: Some(interrogation_group),
+			counter_group: None,
 		})
+	}
+
+	/// `counter_group` must be in **1..=4** and `value` must be an integrated
+	/// total ([`PointValue::is_counter_integration`]), or this returns
+	/// [`None`].
+	#[must_use]
+	pub fn with_counter_interrogation_group(
+		address: PointAddress,
+		value: PointValue,
+		counter_group: u8,
+	) -> Option<Self> {
+		if !(1..=4).contains(&counter_group) || !value.is_counter_integration() {
+			return None;
+		}
+		Some(Self { address, value, interrogation_group: None, counter_group: Some(counter_group) })
 	}
 }
 
 impl From<(PointAddress, PointValue)> for RtuInitialPoint {
 	fn from((address, value): (PointAddress, PointValue)) -> Self {
-		Self { address, value, interrogation_group: None }
+		Self { address, value, interrogation_group: None, counter_group: None }
 	}
 }
 

@@ -11,7 +11,8 @@ use crate::{
 		FromBytes, GenericObject, InformationObjects, MBoNa1, MBoTb1, MDpNa1, MDpTa1, MDpTb1,
 		MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1, MMeNb1,
 		MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1, MSpTa1,
-		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes, commands::Qoi,
+		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes,
+		commands::{Qoi, Rqt},
 	},
 	types_id::TypeId,
 };
@@ -286,6 +287,84 @@ pub(super) fn interrogation_data_asdus(
 	out
 }
 
+/// Built counter-interrogation monitoring ASDUs and the model addresses that
+/// contributed (for freeze/reset after the read).
+#[derive(Debug, Default)]
+pub(super) struct CounterInterrogationData {
+	pub asdus: Vec<Asdu>,
+	pub read_addresses: Vec<PointAddress>,
+}
+
+/// [`Cot`] for `M_IT_*` ASDUs answering `C_CI_NA_1` with this RQT.
+#[must_use]
+pub(super) const fn counter_interrogation_data_cot(rqt: Rqt) -> Option<Cot> {
+	match rqt {
+		Rqt::ReqCoGen => Some(Cot::CounterInterrogationGeneral),
+		Rqt::ReqCo1 => Some(Cot::CounterInterrogationGroup1),
+		Rqt::ReqCo2 => Some(Cot::CounterInterrogationGroup2),
+		Rqt::ReqCo3 => Some(Cot::CounterInterrogationGroup3),
+		Rqt::ReqCo4 => Some(Cot::CounterInterrogationGroup4),
+		Rqt::None | Rqt::Other(_) => None,
+	}
+}
+
+#[must_use]
+fn point_included_in_counter_interrogation(
+	addr: PointAddress,
+	rqt: Rqt,
+	counter_groups: &HashMap<PointAddress, u8>,
+) -> bool {
+	match rqt {
+		Rqt::ReqCoGen => true,
+		Rqt::ReqCo1 => counter_groups.get(&addr).is_some_and(|g| *g == 1),
+		Rqt::ReqCo2 => counter_groups.get(&addr).is_some_and(|g| *g == 2),
+		Rqt::ReqCo3 => counter_groups.get(&addr).is_some_and(|g| *g == 3),
+		Rqt::ReqCo4 => counter_groups.get(&addr).is_some_and(|g| *g == 4),
+		Rqt::None | Rqt::Other(_) => false,
+	}
+}
+
+/// `M_IT_NA_1` / `M_IT_TB_1` ASDUs for one common address and counter RQT, plus
+/// the addresses read (for [`Frz`](crate::types::commands::Frz) handling).
+/// Returns empty when [`counter_interrogation_data_cot`]`(rqt)` is [`None`].
+#[must_use]
+pub(super) fn counter_interrogation_data(
+	ca: u16,
+	model: &HashMap<PointAddress, PointValue>,
+	rqt: Rqt,
+	counter_groups: &HashMap<PointAddress, u8>,
+) -> CounterInterrogationData {
+	let Some(data_cot) = counter_interrogation_data_cot(rqt) else {
+		return CounterInterrogationData::default();
+	};
+	let mut read_addresses = Vec::new();
+	let mut m_it_na: Vec<(u32, MItNa1)> = Vec::new();
+	let mut m_it_tb: Vec<(u32, MItTb1)> = Vec::new();
+	for (addr, v) in model.iter() {
+		if addr.common_address != ca {
+			continue;
+		}
+		if !v.is_counter_integration() {
+			continue;
+		}
+		if !point_included_in_counter_interrogation(*addr, rqt, counter_groups) {
+			continue;
+		}
+		read_addresses.push(*addr);
+		let ioa = addr.information_object_address;
+		match v {
+			PointValue::MItNa1(m) => m_it_na.push((ioa, m.clone())),
+			PointValue::MItTb1(m) => m_it_tb.push((ioa, m.clone())),
+			_ => {}
+		}
+	}
+	read_addresses.sort_by_key(|a| a.information_object_address);
+	let mut asdus = Vec::new();
+	sort_and_push_interrogation_chunks(&mut asdus, ca, &mut m_it_na, TypeId::M_IT_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut asdus, ca, &mut m_it_tb, TypeId::M_IT_TB_1, data_cot);
+	CounterInterrogationData { asdus, read_addresses }
+}
+
 #[cfg(test)]
 mod interrogation_qoi_tests {
 	use std::collections::HashMap;
@@ -347,5 +426,71 @@ mod interrogation_qoi_tests {
 		let groups = HashMap::new();
 		assert!(interrogation_data_asdus(ca, &model, Qoi::Unused, &groups).is_empty());
 		assert!(interrogation_data_asdus(ca, &model, Qoi::Other(19), &groups).is_empty());
+	}
+}
+
+#[cfg(test)]
+mod counter_interrogation_rqt_tests {
+	use std::collections::HashMap;
+
+	use super::{counter_interrogation_data, counter_interrogation_data_cot};
+	use crate::{
+		cot::Cot,
+		rtu_server::model::{PointAddress, PointValue},
+		types::{MItNa1, commands::Rqt, quality_descriptors::Qds},
+	};
+
+	#[test]
+	fn counter_cot_tracks_rqt() {
+		assert_eq!(
+			counter_interrogation_data_cot(Rqt::ReqCoGen),
+			Some(Cot::CounterInterrogationGeneral)
+		);
+		assert_eq!(
+			counter_interrogation_data_cot(Rqt::ReqCo2),
+			Some(Cot::CounterInterrogationGroup2)
+		);
+		assert_eq!(counter_interrogation_data_cot(Rqt::None), None);
+		assert_eq!(counter_interrogation_data_cot(Rqt::Other(0)), None);
+	}
+
+	#[test]
+	fn counter_group_filters_counters() {
+		let ca = 1_u16;
+		let c1 = PointAddress::new(ca, 10);
+		let c2 = PointAddress::new(ca, 20);
+		let v = PointValue::MItNa1(MItNa1 { bcr: 1, qds: Qds::default() });
+		let mut model = HashMap::new();
+		model.insert(c1, v.clone());
+		model.insert(c2, v);
+		let mut counter_groups = HashMap::new();
+		counter_groups.insert(c1, 1_u8);
+		counter_groups.insert(c2, 2_u8);
+
+		let general = counter_interrogation_data(ca, &model, Rqt::ReqCoGen, &counter_groups);
+		assert_eq!(general.asdus.len(), 1);
+		assert_eq!(general.asdus[0].cot, Cot::CounterInterrogationGeneral);
+		assert_eq!(general.read_addresses.len(), 2);
+
+		let g1 = counter_interrogation_data(ca, &model, Rqt::ReqCo1, &counter_groups);
+		assert_eq!(g1.asdus.len(), 1);
+		assert_eq!(g1.asdus[0].cot, Cot::CounterInterrogationGroup1);
+		assert_eq!(g1.read_addresses, vec![c1]);
+
+		let g3 = counter_interrogation_data(ca, &model, Rqt::ReqCo3, &counter_groups);
+		assert!(g3.asdus.is_empty());
+		assert!(g3.read_addresses.is_empty());
+	}
+
+	#[test]
+	fn unsupported_rqt_returns_empty_without_panic() {
+		let ca = 1_u16;
+		let a = PointAddress::new(ca, 1);
+		let mut model = HashMap::new();
+		model.insert(a, PointValue::MItNa1(MItNa1 { bcr: 0, qds: Qds::default() }));
+		let groups = HashMap::new();
+		let d = counter_interrogation_data(ca, &model, Rqt::None, &groups);
+		assert!(d.asdus.is_empty());
+		assert!(d.read_addresses.is_empty());
 	}
 }

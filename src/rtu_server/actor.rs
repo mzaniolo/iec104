@@ -13,7 +13,9 @@ use super::{
 		end_of_initialization_asdu, interrogation_data_asdus, spontaneous_asdu,
 		station_common_address,
 	},
-	system_command_handler::{RtuSystemHandlers, SystemCommandContext, is_system_command_cot},
+	system_command_handler::{
+		CounterInterrogationContext, RtuSystemHandlers, SystemCommandContext, is_system_command_cot,
+	},
 };
 use crate::{
 	asdu::Asdu,
@@ -38,6 +40,7 @@ pub(crate) enum ActorMsg {
 		address: PointAddress,
 		initial: PointValue,
 		interrogation_group: Option<u8>,
+		counter_group: Option<u8>,
 		reply: tokio::sync::oneshot::Sender<Result<(), RegisterPointError>>,
 	},
 	Unregister {
@@ -69,6 +72,10 @@ pub(crate) enum RegisterPointsError {
 	InvalidInterrogationGroup {
 		group: u8,
 	},
+	InvalidCounterInterrogationGroup {
+		group: u8,
+	},
+	CounterGroupRequiresCounterPoint,
 }
 
 /// Failure for a single [`ActorMsg::Register`].
@@ -76,6 +83,8 @@ pub(crate) enum RegisterPointsError {
 pub(crate) enum RegisterPointError {
 	AlreadyRegistered(PointAddress),
 	InvalidInterrogationGroup { group: u8 },
+	InvalidCounterInterrogationGroup { group: u8 },
+	CounterGroupRequiresCounterPoint,
 }
 
 #[derive(Clone)]
@@ -105,6 +114,7 @@ pub(super) async fn run_actor(
 	server: Server,
 	mut model: HashMap<PointAddress, PointValue>,
 	mut interrogation_groups: HashMap<PointAddress, u8>,
+	mut counter_groups: HashMap<PointAddress, u8>,
 	command_handler: Arc<dyn RtuCommandHandler>,
 	system_handlers: RtuSystemHandlers,
 ) {
@@ -115,34 +125,23 @@ pub(super) async fn run_actor(
 				let res = handle_set_point(&mut model, &server, address, value).await;
 				let _ = reply.send(res);
 			}
-			ActorMsg::Register { address, initial, interrogation_group, reply } => {
-				let res = if let Some(g) = interrogation_group {
-					if !(1..=16).contains(&g) {
-						Err(RegisterPointError::InvalidInterrogationGroup { group: g })
-					} else {
-						register_one_point(
-							&mut model,
-							&mut interrogation_groups,
-							address,
-							initial,
-							Some(g),
-						)
-					}
-				} else {
-					register_one_point(
-						&mut model,
-						&mut interrogation_groups,
-						address,
-						initial,
-						None,
-					)
-				};
+			ActorMsg::Register { address, initial, interrogation_group, counter_group, reply } => {
+				let res = register_one_point(
+					&mut model,
+					&mut interrogation_groups,
+					&mut counter_groups,
+					address,
+					initial,
+					interrogation_group,
+					counter_group,
+				);
 				let _ = reply.send(res);
 			}
 			ActorMsg::Unregister { address, reply } => {
 				let res = match model.remove(&address) {
 					Some(_) => {
 						interrogation_groups.remove(&address);
+						counter_groups.remove(&address);
 						Ok(())
 					}
 					None => Err(address),
@@ -150,19 +149,26 @@ pub(super) async fn run_actor(
 				let _ = reply.send(res);
 			}
 			ActorMsg::RegisterPoints { points, reply } => {
-				let res = try_register_points(&mut model, &mut interrogation_groups, points);
+				let res = try_register_points(
+					&mut model,
+					&mut interrogation_groups,
+					&mut counter_groups,
+					points,
+				);
 				let _ = reply.send(res);
 			}
 			ActorMsg::UnregisterAll { reply } => {
 				let n = model.len();
 				model.clear();
 				interrogation_groups.clear();
+				counter_groups.clear();
 				let _ = reply.send(n);
 			}
 			ActorMsg::IngressAsdu { asdu, connection_id, peer } => {
 				handle_ingress_asdu(
 					&mut model,
 					&interrogation_groups,
+					&counter_groups,
 					&server,
 					&command_handler,
 					&system_handlers,
@@ -184,16 +190,36 @@ pub(super) async fn run_actor(
 fn register_one_point(
 	model: &mut HashMap<PointAddress, PointValue>,
 	interrogation_groups: &mut HashMap<PointAddress, u8>,
+	counter_groups: &mut HashMap<PointAddress, u8>,
 	address: PointAddress,
 	initial: PointValue,
 	interrogation_group: Option<u8>,
+	counter_group: Option<u8>,
 ) -> Result<(), RegisterPointError> {
 	use std::collections::hash_map::Entry;
+
+	if let Some(g) = interrogation_group
+		&& !(1..=16).contains(&g)
+	{
+		return Err(RegisterPointError::InvalidInterrogationGroup { group: g });
+	}
+	if let Some(cg) = counter_group {
+		if !(1..=4).contains(&cg) {
+			return Err(RegisterPointError::InvalidCounterInterrogationGroup { group: cg });
+		}
+		if !initial.is_counter_integration() {
+			return Err(RegisterPointError::CounterGroupRequiresCounterPoint);
+		}
+	}
+
 	match model.entry(address) {
 		Entry::Vacant(e) => {
 			e.insert(initial);
 			if let Some(g) = interrogation_group {
 				interrogation_groups.insert(address, g);
+			}
+			if let Some(cg) = counter_group {
+				counter_groups.insert(address, cg);
 			}
 			Ok(())
 		}
@@ -204,6 +230,7 @@ fn register_one_point(
 fn try_register_points(
 	model: &mut HashMap<PointAddress, PointValue>,
 	interrogation_groups: &mut HashMap<PointAddress, u8>,
+	counter_groups: &mut HashMap<PointAddress, u8>,
 	points: Vec<RtuInitialPoint>,
 ) -> Result<(), RegisterPointsError> {
 	if points.is_empty() {
@@ -216,6 +243,14 @@ fn try_register_points(
 		{
 			return Err(RegisterPointsError::InvalidInterrogationGroup { group: g });
 		}
+		if let Some(cg) = p.counter_group {
+			if !(1..=4).contains(&cg) {
+				return Err(RegisterPointsError::InvalidCounterInterrogationGroup { group: cg });
+			}
+			if !p.value.is_counter_integration() {
+				return Err(RegisterPointsError::CounterGroupRequiresCounterPoint);
+			}
+		}
 		if !seen.insert(p.address) {
 			return Err(RegisterPointsError::DuplicateInInput);
 		}
@@ -227,6 +262,9 @@ fn try_register_points(
 		model.insert(p.address, p.value);
 		if let Some(g) = p.interrogation_group {
 			interrogation_groups.insert(p.address, g);
+		}
+		if let Some(cg) = p.counter_group {
+			counter_groups.insert(p.address, cg);
 		}
 	}
 	Ok(())
@@ -279,9 +317,6 @@ async fn dispatch_rtu_system_handler(
 		TypeId::C_TS_NA_1 | TypeId::C_TS_TA_1 => handlers.test.handle_test(ctx, server).await,
 		TypeId::C_RD_NA_1 => handlers.read.handle_read(ctx, server).await,
 		TypeId::C_CS_NA_1 => handlers.clock_sync.handle_clock_sync(ctx, server).await,
-		TypeId::C_CI_NA_1 => {
-			handlers.counter_interrogation.handle_counter_interrogation(ctx, server).await
-		}
 		TypeId::C_RP_NA_1 => handlers.reset_process.handle_reset_process(ctx, server).await,
 		_ => Ok(()),
 	}
@@ -291,6 +326,7 @@ async fn dispatch_rtu_system_handler(
 async fn handle_ingress_asdu(
 	model: &mut HashMap<PointAddress, PointValue>,
 	interrogation_groups: &HashMap<PointAddress, u8>,
+	counter_groups: &HashMap<PointAddress, u8>,
 	server: &Server,
 	command_handler: &Arc<dyn RtuCommandHandler>,
 	system_handlers: &RtuSystemHandlers,
@@ -320,7 +356,6 @@ async fn handle_ingress_asdu(
 		| TypeId::C_TS_TA_1
 		| TypeId::C_RD_NA_1
 		| TypeId::C_CS_NA_1
-		| TypeId::C_CI_NA_1
 		| TypeId::C_RP_NA_1)
 			if sys_cot =>
 		{
@@ -330,6 +365,22 @@ async fn handle_ingress_asdu(
 				dispatch_rtu_system_handler(system_handlers, tid, &mut ctx, server).await
 			{
 				tracing::error!(error = ?e, ?peer, type_id = ?tid, "system command handling");
+			}
+		}
+		TypeId::C_CI_NA_1 if sys_cot => {
+			let mut ci_ctx = CounterInterrogationContext {
+				connection_id,
+				peer,
+				asdu: &asdu,
+				model,
+				counter_groups,
+			};
+			if let Err(e) = system_handlers
+				.counter_interrogation
+				.handle_counter_interrogation(&mut ci_ctx, server)
+				.await
+			{
+				tracing::error!(error = ?e, ?peer, "counter interrogation handling");
 			}
 		}
 		TypeId::C_IC_NA_1 => {

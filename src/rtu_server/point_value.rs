@@ -105,3 +105,12 @@ define_rtu_point_value! {
 	M_EP_TE_1 => MEpTe1(MEpTe1) ;
 	M_EP_TF_1 => MEpTf1(MEpTf1) ;
 }
+
+impl PointValue {
+	/// Integrated totals (`M_IT_NA_1` / `M_IT_TB_1`) used with `C_CI_NA_1`
+	/// counter interrogation.
+	#[must_use]
+	pub const fn is_counter_integration(&self) -> bool {
+		matches!(self, Self::MItNa1(_) | Self::MItTb1(_))
+	}
+}
