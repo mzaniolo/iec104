@@ -8,7 +8,7 @@ use super::{
 	command_handler::RtuCommandHandler,
 	commands,
 	error::{InterrogationError, SetPointError},
-	model::{PointAddress, PointValue},
+	model::{PointAddress, PointValue, RtuInitialPoint},
 	output::{
 		end_of_initialization_asdu, interrogation_data_asdus, spontaneous_asdu,
 		station_common_address,
@@ -37,14 +37,15 @@ pub(crate) enum ActorMsg {
 	Register {
 		address: PointAddress,
 		initial: PointValue,
-		reply: tokio::sync::oneshot::Sender<Result<(), PointAddress>>,
+		interrogation_group: Option<u8>,
+		reply: tokio::sync::oneshot::Sender<Result<(), RegisterPointError>>,
 	},
 	Unregister {
 		address: PointAddress,
 		reply: tokio::sync::oneshot::Sender<Result<(), PointAddress>>,
 	},
 	RegisterPoints {
-		points: Vec<(PointAddress, PointValue)>,
+		points: Vec<RtuInitialPoint>,
 		reply: tokio::sync::oneshot::Sender<Result<(), RegisterPointsError>>,
 	},
 	UnregisterAll {
@@ -65,6 +66,16 @@ pub(crate) enum RegisterPointsError {
 	AlreadyInModel {
 		address: PointAddress,
 	},
+	InvalidInterrogationGroup {
+		group: u8,
+	},
+}
+
+/// Failure for a single [`ActorMsg::Register`].
+#[derive(Debug)]
+pub(crate) enum RegisterPointError {
+	AlreadyRegistered(PointAddress),
+	InvalidInterrogationGroup { group: u8 },
 }
 
 #[derive(Clone)]
@@ -93,6 +104,7 @@ pub(super) async fn run_actor(
 	mut rx: tokio::sync::mpsc::UnboundedReceiver<ActorMsg>,
 	server: Server,
 	mut model: HashMap<PointAddress, PointValue>,
+	mut interrogation_groups: HashMap<PointAddress, u8>,
 	command_handler: Arc<dyn RtuCommandHandler>,
 	system_handlers: RtuSystemHandlers,
 ) {
@@ -103,36 +115,54 @@ pub(super) async fn run_actor(
 				let res = handle_set_point(&mut model, &server, address, value).await;
 				let _ = reply.send(res);
 			}
-			ActorMsg::Register { address, initial, reply } => {
-				use std::collections::hash_map::Entry;
-				let res = match model.entry(address) {
-					Entry::Vacant(e) => {
-						e.insert(initial);
-						Ok(())
+			ActorMsg::Register { address, initial, interrogation_group, reply } => {
+				let res = if let Some(g) = interrogation_group {
+					if !(1..=16).contains(&g) {
+						Err(RegisterPointError::InvalidInterrogationGroup { group: g })
+					} else {
+						register_one_point(
+							&mut model,
+							&mut interrogation_groups,
+							address,
+							initial,
+							Some(g),
+						)
 					}
-					Entry::Occupied(e) => Err(*e.key()),
+				} else {
+					register_one_point(
+						&mut model,
+						&mut interrogation_groups,
+						address,
+						initial,
+						None,
+					)
 				};
 				let _ = reply.send(res);
 			}
 			ActorMsg::Unregister { address, reply } => {
 				let res = match model.remove(&address) {
-					Some(_) => Ok(()),
+					Some(_) => {
+						interrogation_groups.remove(&address);
+						Ok(())
+					}
 					None => Err(address),
 				};
 				let _ = reply.send(res);
 			}
 			ActorMsg::RegisterPoints { points, reply } => {
-				let res = try_register_points(&mut model, points);
+				let res = try_register_points(&mut model, &mut interrogation_groups, points);
 				let _ = reply.send(res);
 			}
 			ActorMsg::UnregisterAll { reply } => {
 				let n = model.len();
 				model.clear();
+				interrogation_groups.clear();
 				let _ = reply.send(n);
 			}
 			ActorMsg::IngressAsdu { asdu, connection_id, peer } => {
 				handle_ingress_asdu(
 					&mut model,
+					&interrogation_groups,
 					&server,
 					&command_handler,
 					&system_handlers,
@@ -151,23 +181,54 @@ pub(super) async fn run_actor(
 	tracing::warn!("RTU actor channel closed; stopping model loop");
 }
 
+fn register_one_point(
+	model: &mut HashMap<PointAddress, PointValue>,
+	interrogation_groups: &mut HashMap<PointAddress, u8>,
+	address: PointAddress,
+	initial: PointValue,
+	interrogation_group: Option<u8>,
+) -> Result<(), RegisterPointError> {
+	use std::collections::hash_map::Entry;
+	match model.entry(address) {
+		Entry::Vacant(e) => {
+			e.insert(initial);
+			if let Some(g) = interrogation_group {
+				interrogation_groups.insert(address, g);
+			}
+			Ok(())
+		}
+		Entry::Occupied(e) => Err(RegisterPointError::AlreadyRegistered(*e.key())),
+	}
+}
+
 fn try_register_points(
 	model: &mut HashMap<PointAddress, PointValue>,
-	points: Vec<(PointAddress, PointValue)>,
+	interrogation_groups: &mut HashMap<PointAddress, u8>,
+	points: Vec<RtuInitialPoint>,
 ) -> Result<(), RegisterPointsError> {
 	if points.is_empty() {
 		return Ok(());
 	}
 	let mut seen = HashSet::with_capacity(points.len());
-	for (addr, _) in &points {
-		if !seen.insert(*addr) {
+	for p in &points {
+		if let Some(g) = p.interrogation_group
+			&& !(1..=16).contains(&g)
+		{
+			return Err(RegisterPointsError::InvalidInterrogationGroup { group: g });
+		}
+		if !seen.insert(p.address) {
 			return Err(RegisterPointsError::DuplicateInInput);
 		}
-		if model.contains_key(addr) {
-			return Err(RegisterPointsError::AlreadyInModel { address: *addr });
+		if model.contains_key(&p.address) {
+			return Err(RegisterPointsError::AlreadyInModel { address: p.address });
 		}
 	}
-	model.extend(points);
+	for p in points {
+		model.insert(p.address, p.value);
+		if let Some(g) = p.interrogation_group {
+			interrogation_groups.insert(p.address, g);
+		}
+	}
 	Ok(())
 }
 
@@ -228,6 +289,7 @@ async fn dispatch_rtu_system_handler(
 #[allow(clippy::too_many_arguments)]
 async fn handle_ingress_asdu(
 	model: &mut HashMap<PointAddress, PointValue>,
+	interrogation_groups: &HashMap<PointAddress, u8>,
 	server: &Server,
 	command_handler: &Arc<dyn RtuCommandHandler>,
 	system_handlers: &RtuSystemHandlers,
@@ -269,14 +331,12 @@ async fn handle_ingress_asdu(
 			}
 		}
 		TypeId::C_IC_NA_1 => {
-			match handle_interrogation(model, server, &asdu, connection_id).await {
+			match handle_interrogation(model, interrogation_groups, server, &asdu, connection_id)
+				.await
+			{
 				Ok(()) => {}
 				Err(InterrogationError::Skipped) => {
-					tracing::trace!(
-						?peer,
-						type_id = ?asdu.type_id,
-						"general interrogation skipped"
-					);
+					tracing::trace!(?peer, type_id = ?asdu.type_id, "C_IC_NA_1 skipped");
 				}
 				Err(e) => tracing::error!(error = %e, ?peer, "interrogation handling"),
 			}
@@ -289,6 +349,7 @@ async fn handle_ingress_asdu(
 
 async fn handle_interrogation(
 	model: &HashMap<PointAddress, PointValue>,
+	interrogation_groups: &HashMap<PointAddress, u8>,
 	server: &Server,
 	asdu: &Asdu,
 	connection_id: ConnectionId,
@@ -305,6 +366,27 @@ async fn handle_interrogation(
 	}
 	if asdu.cot != Cot::Activation {
 		return Err(InterrogationError::Skipped);
+	}
+
+	if matches!(qoi, Qoi::Other(_)) {
+		let actcon = Asdu {
+			type_id: TypeId::C_IC_NA_1,
+			cot: Cot::ActivationConfirmation,
+			originator_address: asdu.originator_address,
+			address_field: asdu.address_field,
+			sequence: asdu.sequence,
+			test: asdu.test,
+			negative: true,
+			information_objects: InformationObjects::CIcNa1(vec![GenericObject {
+				address: go.address,
+				object: CIcNa1 { qoi },
+			}]),
+		};
+		server
+			.send_asdu(connection_id, actcon)
+			.await
+			.map_err(|source| InterrogationError::SendConfirmation { source })?;
+		return Ok(());
 	}
 
 	let actcon = Asdu {
@@ -326,7 +408,7 @@ async fn handle_interrogation(
 		.map_err(|source| InterrogationError::SendConfirmation { source })?;
 
 	let ca = asdu.address_field;
-	for data_asdu in interrogation_data_asdus(ca, model) {
+	for data_asdu in interrogation_data_asdus(ca, model, qoi, interrogation_groups) {
 		server
 			.send_asdu(connection_id, data_asdu)
 			.await
