@@ -44,6 +44,9 @@ pub enum RtuHandleError {
 	/// was called for an unknown address.
 	#[snafu(display("Point not registered: {address}"))]
 	NotRegistered { address: PointAddress },
+	/// Interrogation group must be in **1..=16** (IEC 60870-5-101).
+	#[snafu(display("invalid interrogation group: {group} (expected 1..=16)"))]
+	InvalidInterrogationGroup { group: u8 },
 	/// [`super::RtuServerHandle::set_point`](crate::rtu_server::RtuServerHandle::set_point) failed.
 	#[snafu(display("{source}"))]
 	SetPoint { source: SetPointError },
@@ -55,12 +58,13 @@ impl From<SetPointError> for RtuHandleError {
 	}
 }
 
-/// Failure while handling a general interrogation on the wire (internal; logged
-/// in ingress handler).
+/// Failure while handling `C_IC_NA_1` on the wire (internal; logged in ingress
+/// handler).
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub(crate) enum InterrogationError {
-	/// ASDU is not `C_IC_NA_1` activation with a supported qualifier.
+	/// ASDU is not `C_IC_NA_1` activation with a handled QOI (e.g. unused
+	/// qualifier).
 	#[snafu(display("not handled as interrogation by RTU server"))]
 	Skipped,
 	#[snafu(display("failed to send interrogation activation confirmation: {source}"))]

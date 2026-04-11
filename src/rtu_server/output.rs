@@ -11,7 +11,7 @@ use crate::{
 		FromBytes, GenericObject, InformationObjects, MBoNa1, MBoTb1, MDpNa1, MDpTa1, MDpTb1,
 		MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1, MMeNb1,
 		MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1, MSpTa1,
-		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes,
+		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes, commands::Qoi,
 	},
 	types_id::TypeId,
 };
@@ -19,11 +19,69 @@ use crate::{
 /// Maximum number of information objects per ASDU (7-bit count field).
 pub(super) const MAX_OBJECTS_PER_ASDU: usize = 127;
 
+/// [`Cot`] for monitoring ASDUs answering `C_IC_NA_1` with this QOI (global or
+/// group 1–16). [`None`] for [`Qoi::Unused`], [`Qoi::Other`], etc.
+#[must_use]
+pub(super) const fn interrogation_data_cot(qoi: Qoi) -> Option<Cot> {
+	match qoi {
+		Qoi::Global => Some(Cot::InterrogationGeneral),
+		Qoi::Group1 => Some(Cot::InterrogationGroup1),
+		Qoi::Group2 => Some(Cot::InterrogationGroup2),
+		Qoi::Group3 => Some(Cot::InterrogationGroup3),
+		Qoi::Group4 => Some(Cot::InterrogationGroup4),
+		Qoi::Group5 => Some(Cot::InterrogationGroup5),
+		Qoi::Group6 => Some(Cot::InterrogationGroup6),
+		Qoi::Group7 => Some(Cot::InterrogationGroup7),
+		Qoi::Group8 => Some(Cot::InterrogationGroup8),
+		Qoi::Group9 => Some(Cot::InterrogationGroup9),
+		Qoi::Group10 => Some(Cot::InterrogationGroup10),
+		Qoi::Group11 => Some(Cot::InterrogationGroup11),
+		Qoi::Group12 => Some(Cot::InterrogationGroup12),
+		Qoi::Group13 => Some(Cot::InterrogationGroup13),
+		Qoi::Group14 => Some(Cot::InterrogationGroup14),
+		Qoi::Group15 => Some(Cot::InterrogationGroup15),
+		Qoi::Group16 => Some(Cot::InterrogationGroup16),
+		Qoi::Unused | Qoi::Other(_) => None,
+	}
+}
+
+#[must_use]
+fn point_included_in_interrogation(
+	addr: PointAddress,
+	qoi: Qoi,
+	interrogation_groups: &HashMap<PointAddress, u8>,
+) -> bool {
+	match qoi {
+		Qoi::Global => true,
+		Qoi::Group1
+		| Qoi::Group2
+		| Qoi::Group3
+		| Qoi::Group4
+		| Qoi::Group5
+		| Qoi::Group6
+		| Qoi::Group7
+		| Qoi::Group8
+		| Qoi::Group9
+		| Qoi::Group10
+		| Qoi::Group11
+		| Qoi::Group12
+		| Qoi::Group13
+		| Qoi::Group14
+		| Qoi::Group15
+		| Qoi::Group16 => {
+			let expected = qoi.to_byte().saturating_sub(20);
+			interrogation_groups.get(&addr).is_some_and(|g| *g == expected)
+		}
+		Qoi::Unused | Qoi::Other(_) => false,
+	}
+}
+
 fn sort_and_push_interrogation_chunks<T>(
 	out: &mut Vec<Asdu>,
 	ca: u16,
 	objs: &mut [(u32, T)],
 	type_id: TypeId,
+	cot: Cot,
 ) where
 	T: Clone + FromBytes + ToBytes + Default,
 	InformationObjects: From<Vec<GenericObject<T>>>,
@@ -36,7 +94,7 @@ fn sort_and_push_interrogation_chunks<T>(
 			.collect();
 		out.push(Asdu {
 			type_id,
-			cot: Cot::InterrogationGeneral,
+			cot,
 			originator_address: 0,
 			address_field: ca,
 			sequence: false,
@@ -101,14 +159,24 @@ pub(super) fn station_common_address(model: &HashMap<PointAddress, PointValue>) 
 	model.keys().map(|a| a.common_address).min().unwrap_or(0)
 }
 
-/// General-interrogation data ASDUs for one common address. Buckets must match
-/// [`PointValue`] variants (Type IDs 1–40 monitoring range).
+/// Interrogation data ASDUs for one common address and QOI (global or group
+/// 1–16). Buckets must match [`PointValue`] variants (Type IDs 1–40 monitoring
+/// range).
+///
+/// If `qoi` has no interrogation COT ([`interrogation_data_cot`] is [`None`],
+/// e.g. [`Qoi::Unused`] or [`Qoi::Other`]), returns an empty [`Vec`] — no
+/// panic.
 #[allow(clippy::too_many_lines)]
 #[must_use]
 pub(super) fn interrogation_data_asdus(
 	ca: u16,
 	model: &HashMap<PointAddress, PointValue>,
+	qoi: Qoi,
+	interrogation_groups: &HashMap<PointAddress, u8>,
 ) -> Vec<Asdu> {
+	let Some(data_cot) = interrogation_data_cot(qoi) else {
+		return Vec::new();
+	};
 	let mut out = Vec::new();
 
 	let mut m_sp_na: Vec<(u32, MSpNa1)> = Vec::new();
@@ -146,6 +214,9 @@ pub(super) fn interrogation_data_asdus(
 		if addr.common_address != ca {
 			continue;
 		}
+		if !point_included_in_interrogation(*addr, qoi, interrogation_groups) {
+			continue;
+		}
 		let ioa = addr.information_object_address;
 		match v {
 			PointValue::MSpNa1(m) => m_sp_na.push((ioa, m.clone())),
@@ -181,36 +252,100 @@ pub(super) fn interrogation_data_asdus(
 		}
 	}
 
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_na, TypeId::M_SP_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_ta, TypeId::M_SP_TA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_na, TypeId::M_DP_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_ta, TypeId::M_DP_TA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_na, TypeId::M_ST_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_ta, TypeId::M_ST_TA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_bo_na, TypeId::M_BO_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_na, TypeId::M_ME_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_ta, TypeId::M_ME_TA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nb, TypeId::M_ME_NB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tb, TypeId::M_ME_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nc, TypeId::M_ME_NC_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tc, TypeId::M_ME_TC_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_it_na, TypeId::M_IT_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_ta, TypeId::M_EP_TA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tb, TypeId::M_EP_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tc, TypeId::M_EP_TC_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ps_na, TypeId::M_PS_NA_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nd, TypeId::M_ME_ND_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_tb, TypeId::M_SP_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_tb, TypeId::M_DP_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_tb, TypeId::M_ST_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_bo_tb, TypeId::M_BO_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_td, TypeId::M_ME_TD_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_te, TypeId::M_ME_TE_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tf, TypeId::M_ME_TF_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_it_tb, TypeId::M_IT_TB_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_td, TypeId::M_EP_TD_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_te, TypeId::M_EP_TE_1);
-	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tf, TypeId::M_EP_TF_1);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_na, TypeId::M_SP_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_ta, TypeId::M_SP_TA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_na, TypeId::M_DP_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_ta, TypeId::M_DP_TA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_na, TypeId::M_ST_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_ta, TypeId::M_ST_TA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_bo_na, TypeId::M_BO_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_na, TypeId::M_ME_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_ta, TypeId::M_ME_TA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nb, TypeId::M_ME_NB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tb, TypeId::M_ME_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nc, TypeId::M_ME_NC_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tc, TypeId::M_ME_TC_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_it_na, TypeId::M_IT_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_ta, TypeId::M_EP_TA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tb, TypeId::M_EP_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tc, TypeId::M_EP_TC_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ps_na, TypeId::M_PS_NA_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_nd, TypeId::M_ME_ND_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_sp_tb, TypeId::M_SP_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_dp_tb, TypeId::M_DP_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_st_tb, TypeId::M_ST_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_bo_tb, TypeId::M_BO_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_td, TypeId::M_ME_TD_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_te, TypeId::M_ME_TE_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_me_tf, TypeId::M_ME_TF_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_it_tb, TypeId::M_IT_TB_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_td, TypeId::M_EP_TD_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_te, TypeId::M_EP_TE_1, data_cot);
+	sort_and_push_interrogation_chunks(&mut out, ca, &mut m_ep_tf, TypeId::M_EP_TF_1, data_cot);
 
 	out
+}
+
+#[cfg(test)]
+mod interrogation_qoi_tests {
+	use std::collections::HashMap;
+
+	use super::{interrogation_data_asdus, interrogation_data_cot};
+	use crate::{
+		rtu_server::model::{PointAddress, PointValue},
+		types::{MMeNa1, commands::Qoi, quality_descriptors::Qds},
+	};
+
+	#[test]
+	fn cot_tracks_qoi() {
+		assert_eq!(
+			interrogation_data_cot(Qoi::Global),
+			Some(crate::cot::Cot::InterrogationGeneral)
+		);
+		assert_eq!(interrogation_data_cot(Qoi::Group3), Some(crate::cot::Cot::InterrogationGroup3));
+		assert_eq!(interrogation_data_cot(Qoi::Other(19)), None);
+	}
+
+	#[test]
+	fn group_interrogation_filters_points() {
+		let ca = 1_u16;
+		let a1 = PointAddress::new(ca, 10);
+		let a2 = PointAddress::new(ca, 20);
+		let v = PointValue::MMeNa1(MMeNa1 { nva: 0, qds: Qds::default() });
+		let mut model = HashMap::new();
+		model.insert(a1, v.clone());
+		model.insert(a2, v);
+		let mut groups = HashMap::new();
+		groups.insert(a1, 2_u8);
+		groups.insert(a2, 3_u8);
+
+		let global = interrogation_data_asdus(ca, &model, Qoi::Global, &groups);
+		assert_eq!(global.len(), 1);
+		assert_eq!(global[0].cot, crate::cot::Cot::InterrogationGeneral);
+		assert_eq!(global[0].information_objects.len(), 2);
+
+		let g2 = interrogation_data_asdus(ca, &model, Qoi::Group2, &groups);
+		assert_eq!(g2.len(), 1);
+		assert_eq!(g2[0].cot, crate::cot::Cot::InterrogationGroup2);
+		assert_eq!(g2[0].information_objects.len(), 1);
+
+		let g3 = interrogation_data_asdus(ca, &model, Qoi::Group3, &groups);
+		assert_eq!(g3.len(), 1);
+		assert_eq!(g3[0].information_objects.len(), 1);
+
+		let g1_empty = interrogation_data_asdus(ca, &model, Qoi::Group1, &groups);
+		assert!(g1_empty.is_empty());
+	}
+
+	#[test]
+	fn unsupported_qoi_returns_empty_asdus_without_panic() {
+		let ca = 1_u16;
+		let a1 = PointAddress::new(ca, 10);
+		let v = PointValue::MMeNa1(MMeNa1 { nva: 0, qds: Qds::default() });
+		let mut model = HashMap::new();
+		model.insert(a1, v);
+		let groups = HashMap::new();
+		assert!(interrogation_data_asdus(ca, &model, Qoi::Unused, &groups).is_empty());
+		assert!(interrogation_data_asdus(ca, &model, Qoi::Other(19), &groups).is_empty());
+	}
 }

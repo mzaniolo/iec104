@@ -5,8 +5,17 @@
 //! Monitoring points cover IEC 60870-5-104 process information in Type ID range
 //! 1–40 (see [`crate::types_id::TypeId`]: `M_SP_*`, `M_DP_*`, `M_ST_*`,
 //! `M_BO_*`, `M_ME_*`, `M_IT_*`, `M_EP_*`, `M_PS_NA_1`, `M_ME_ND_1`, etc.).
-//! General interrogation: `C_IC_NA_1` (activation → confirmation +
-//! interrogation data → activation termination on the same connection).
+//! Interrogation: `C_IC_NA_1` with QOI **20** (global) returns all points for
+//! the ASDU common address with [`crate::cot::Cot::InterrogationGeneral`]; QOI
+//! **21–36** (groups 1–16) returns only points registered with that group via
+//! [`RtuInitialPoint::with_interrogation_group`] or
+//! [`RtuServerHandle::register_point_with_interrogation_group`], with matching
+//! [`crate::cot::Cot::InterrogationGroup1`] …
+//! [`crate::cot::Cot::InterrogationGroup16`]. Unsupported custom QOI
+//! ([`crate::types::commands::Qoi::Other`]) yields a negative activation
+//! confirmation only (no data, no termination). Sequence: activation →
+//! confirmation → interrogation data → activation termination when data is
+//! supported.
 //!
 //! **Commands** (`Cot::Request` / `Cot::Activation` for supported `C_SC_*`,
 //! `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`): the standard defines the telegram,
@@ -28,10 +37,11 @@
 //! [`RtuServer::start_with_system_handlers`] to customize.
 //!
 //! The point set can be changed at runtime with
-//! [`RtuServerHandle::register_point`], [`RtuServerHandle::register_points`],
-//! [`RtuServerHandle::unregister_point`], and
-//! [`RtuServerHandle::unregister_all`] (no spontaneous ASDU on
-//! register/unregister; clients see changes on the next general interrogation
+//! [`RtuServerHandle::register_point`],
+//! [`RtuServerHandle::register_point_with_interrogation_group`],
+//! [`RtuServerHandle::register_points`], [`RtuServerHandle::unregister_point`],
+//! and [`RtuServerHandle::unregister_all`] (no spontaneous ASDU on
+//! register/unregister; clients see changes on the next interrogation
 //! or after updates to remaining points).
 
 mod actor;
@@ -44,14 +54,18 @@ mod output;
 mod point_value;
 mod system_command_handler;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::{HashMap, hash_map::Entry},
+	sync::Arc,
+};
 
 pub use command_handler::{
 	CommandContext, CommandHandling, RejectAllCommands, RtuCommandHandler, command_handler_from_fn,
 };
 pub use command_presets::MapCommandsToSameIoaMonitoring;
 pub use error::{RtuHandleError, SetPointError};
-pub use model::{PointAddress, PointValue};
+pub use model::{PointAddress, PointValue, RtuInitialMaps, RtuInitialPoint};
+use snafu::whatever;
 pub use system_command_handler::{
 	DefaultRtuClockSyncSystemHandler, DefaultRtuCounterInterrogationHandler,
 	DefaultRtuReadSystemHandler, DefaultRtuTestSystemHandler, RtuClockSyncSystemHandler,
@@ -60,6 +74,37 @@ pub use system_command_handler::{
 };
 
 use crate::{config::ServerConfig, error::Error};
+
+fn build_rtu_initial_maps(
+	initial_points: impl IntoIterator<Item = impl Into<RtuInitialPoint>>,
+) -> Result<RtuInitialMaps, Error> {
+	let mut points = HashMap::new();
+	let mut interrogation_groups = HashMap::new();
+	for p in initial_points.into_iter().map(Into::into) {
+		let RtuInitialPoint { address, value, interrogation_group } = p;
+		if let Some(g) = interrogation_group
+			&& !(1..=16).contains(&g)
+		{
+			whatever!(
+				"invalid interrogation group {g} for RTU point CA {} IOA {}",
+				address.common_address,
+				address.information_object_address
+			);
+		}
+		match points.entry(address) {
+			Entry::Vacant(e) => {
+				e.insert(value);
+				if let Some(g) = interrogation_group {
+					interrogation_groups.insert(address, g);
+				}
+			}
+			Entry::Occupied(_) => {
+				whatever!("duplicate RTU point address in start(): {address}");
+			}
+		}
+	}
+	Ok(RtuInitialMaps { points, interrogation_groups })
+}
 
 /// Starts the low-level [`crate::server::Server`] and a single actor that owns
 /// the point model.
@@ -78,7 +123,7 @@ impl RtuServer {
 	/// [`Self::start_with_system_handlers`].
 	pub async fn start(
 		config: ServerConfig,
-		initial_points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+		initial_points: impl IntoIterator<Item = impl Into<RtuInitialPoint>>,
 		command_handler: Arc<dyn RtuCommandHandler>,
 	) -> Result<RtuServerHandle, Error> {
 		Self::start_with_system_handlers(
@@ -94,19 +139,21 @@ impl RtuServer {
 	/// replace one [`Arc`] field or use [`RtuSystemHandlers::with_read`]).
 	pub async fn start_with_system_handlers(
 		config: ServerConfig,
-		initial_points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+		initial_points: impl IntoIterator<Item = impl Into<RtuInitialPoint>>,
 		command_handler: Arc<dyn RtuCommandHandler>,
 		system_handlers: RtuSystemHandlers,
 	) -> Result<RtuServerHandle, Error> {
 		let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 		let ingress = actor::NetworkIngress::new(tx.clone());
 		let server = crate::server::Server::start(config, ingress).await?;
-		let model: HashMap<PointAddress, PointValue> = initial_points.into_iter().collect();
+		let RtuInitialMaps { points, interrogation_groups } =
+			build_rtu_initial_maps(initial_points)?;
 		let server_for_actor = server.clone();
 		tokio::spawn(actor::run_actor(
 			rx,
 			server_for_actor,
-			model,
+			points,
+			interrogation_groups,
 			command_handler,
 			system_handlers,
 		));
@@ -158,12 +205,55 @@ impl RtuServerHandle {
 	) -> Result<(), RtuHandleError> {
 		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
 		self.tx
-			.send(actor::ActorMsg::Register { address, initial, reply: reply_tx })
+			.send(actor::ActorMsg::Register {
+				address,
+				initial,
+				interrogation_group: None,
+				reply: reply_tx,
+			})
 			.map_err(|_| RtuHandleError::Disconnected)?;
 		match reply_rx.await {
 			Err(_) => Err(RtuHandleError::ActorStopped),
 			Ok(Ok(())) => Ok(()),
-			Ok(Err(address)) => Err(RtuHandleError::AlreadyRegistered { address }),
+			Ok(Err(actor::RegisterPointError::AlreadyRegistered(address))) => {
+				Err(RtuHandleError::AlreadyRegistered { address })
+			}
+			Ok(Err(actor::RegisterPointError::InvalidInterrogationGroup { group })) => {
+				Err(RtuHandleError::InvalidInterrogationGroup { group })
+			}
+		}
+	}
+
+	/// Like [`Self::register_point`], but assigns an IEC interrogation group
+	/// **1..=16** so the point is included in group interrogation (`C_IC_NA_1`
+	/// QOI 21–36) as well as in global interrogation (QOI 20).
+	pub async fn register_point_with_interrogation_group(
+		&self,
+		address: PointAddress,
+		initial: PointValue,
+		interrogation_group: u8,
+	) -> Result<(), RtuHandleError> {
+		if !(1..=16).contains(&interrogation_group) {
+			return Err(RtuHandleError::InvalidInterrogationGroup { group: interrogation_group });
+		}
+		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+		self.tx
+			.send(actor::ActorMsg::Register {
+				address,
+				initial,
+				interrogation_group: Some(interrogation_group),
+				reply: reply_tx,
+			})
+			.map_err(|_| RtuHandleError::Disconnected)?;
+		match reply_rx.await {
+			Err(_) => Err(RtuHandleError::ActorStopped),
+			Ok(Ok(())) => Ok(()),
+			Ok(Err(actor::RegisterPointError::AlreadyRegistered(address))) => {
+				Err(RtuHandleError::AlreadyRegistered { address })
+			}
+			Ok(Err(actor::RegisterPointError::InvalidInterrogationGroup { group })) => {
+				Err(RtuHandleError::InvalidInterrogationGroup { group })
+			}
 		}
 	}
 
@@ -191,9 +281,9 @@ impl RtuServerHandle {
 	/// Does not broadcast. An empty iterator succeeds immediately.
 	pub async fn register_points(
 		&self,
-		points: impl IntoIterator<Item = (PointAddress, PointValue)>,
+		points: impl IntoIterator<Item = impl Into<RtuInitialPoint>>,
 	) -> Result<(), RtuHandleError> {
-		let points: Vec<(PointAddress, PointValue)> = points.into_iter().collect();
+		let points: Vec<RtuInitialPoint> = points.into_iter().map(Into::into).collect();
 		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
 		self.tx
 			.send(actor::ActorMsg::RegisterPoints { points, reply: reply_tx })
@@ -206,6 +296,9 @@ impl RtuServerHandle {
 			}
 			Ok(Err(actor::RegisterPointsError::AlreadyInModel { address })) => {
 				Err(RtuHandleError::AlreadyRegistered { address })
+			}
+			Ok(Err(actor::RegisterPointsError::InvalidInterrogationGroup { group })) => {
+				Err(RtuHandleError::InvalidInterrogationGroup { group })
 			}
 		}
 	}
