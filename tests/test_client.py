@@ -1,15 +1,21 @@
 """
 SCADA client for manual / CI checks against `cargo run --example rtu_server`.
 
-Expected server: `iec104` RTU example on TCP (default 127.0.0.1:2404), common address **47**:
-  - IOA **1**, **3**: `M_SP_NA_1`
-  - IOA **11**: `M_ME_NC_1`
-  - IOA **20**, **21**: `M_ME_NA_1` / `M_ME_NB_1` (set-point targets for `C_SE_NA_1` / `C_SE_NB_1`)
+Expected server: `iec104` RTU example on TCP (default 127.0.0.1:2404), common address **47**
+(see `examples/rtu_server.rs`):
 
-**Two TCP clients**: c104 allows only one point per IOA per station, and incoming ASDUs must match that
-point's type. Monitoring uses `M_*` types; commands use `C_*` at the same IOAs as the RTU's
-`MapCommandsToSameIoaMonitoring` preset (see `examples/rtu_server.rs`). A second `c104.Client` with
-`Init.NONE` sends those commands on a parallel connection.
+  - IOA **1**, **3**: `M_SP_NA_1` — `C_SC_NA_1`
+  - IOA **11**: `M_ME_NC_1` — `C_SE_NC_1`
+  - IOA **20**, **21**: `M_ME_NA_1` / `M_ME_NB_1` — `C_SE_NA_1` / `C_SE_NB_1`
+  - IOA **30**: `M_IT_NA_1` (counter interrogation group 1)
+  - IOA **40**: `M_ME_NA_1` (general interrogation group 2)
+
+**Two TCP clients**: c104 allows only one point per IOA per station. Monitoring uses `M_*`; commands
+use `C_*` at the same IOAs as `MapCommandsToSameIoaMonitoring`.
+
+After connect, this script also checks **clock synchronization**, **counter interrogation**,
+**group-2 general interrogation**, and optionally **test command** (`Connection.test`) when the
+installed `c104` version exposes them.
 
 Requires [iec104-python](https://iec104-python.readthedocs.io/latest/) (`c104` in the repo **`.venv`**, or on `PYTHONPATH`).
 
@@ -18,7 +24,7 @@ Requires [iec104-python](https://iec104-python.readthedocs.io/latest/) (`c104` i
 Environment:
   IEC104_HOST       — bind / connect host (default 127.0.0.1)
   IEC104_PORT       — port (default 2404)
-  RTU_TEST_SECONDS  — how long to stay connected (default 12)
+  RTU_TEST_SECONDS  — how long to stay connected after checks (default 12)
   RTU_TEST_REQUIRE_UPDATES — if set to "1", exit 1 if no measurement was received
   RTU_TEST_PYTHON   — path to Python interpreter (optional; defaults to `.venv` then `python3`)
 """
@@ -29,6 +35,7 @@ import logging
 import os
 import sys
 import time
+from collections import defaultdict
 
 import c104
 
@@ -37,9 +44,10 @@ PORT = int(os.environ.get("IEC104_PORT", "2404"))
 TEST_SECONDS = int(os.environ.get("RTU_TEST_SECONDS", "12"))
 REQUIRE_UPDATES = os.environ.get("RTU_TEST_REQUIRE_UPDATES", "") == "1"
 
-# Shared across callbacks (single-threaded event loop)
 _measurement_count = 0
 _command_transmits_failed = 0
+# (io_address, Type) -> number of on_receive callbacks
+_rx_type_ioa = defaultdict(int)
 
 
 def async_exception_handler(task):
@@ -56,6 +64,7 @@ async def async_measurement(point, message):
     """Async follow-up after a measurement callback (non-blocking for the C++ callback)."""
     global _measurement_count
     _measurement_count += 1
+    _rx_type_ioa[(point.io_address, point.type)] += 1
     print(
         f"[{_measurement_count}] {point.type} IOA={point.io_address} "
         f"info={point.info!r} value={getattr(point, 'value', None)!r}"
@@ -108,6 +117,82 @@ async def wait_open(connection: c104.Connection, label: str, deadline_s: float =
         await asyncio.sleep(0.5)
 
 
+def _run_rtu_server_feature_checks(monitor_conn: c104.Connection) -> bool:
+    """
+    Exercise RTU system handlers: clock sync, counter interrogation, group GI, test command.
+    Returns False if any required step fails.
+    """
+    ok = True
+
+    if not hasattr(monitor_conn, "clock_sync"):
+        print("  skip: connection has no clock_sync (c104 too old?)")
+    else:
+        print("  clock_sync(CA=47)...")
+        if not monitor_conn.clock_sync(common_address=47):
+            print("  ERROR: clock_sync returned False", file=sys.stderr)
+            ok = False
+
+    if not hasattr(monitor_conn, "counter_interrogation"):
+        print("  skip: connection has no counter_interrogation")
+    else:
+        print("  counter_interrogation(GENERAL, READ)...")
+        t30_before = _rx_type_ioa[(30, c104.Type.M_IT_NA_1)]
+        if not monitor_conn.counter_interrogation(
+            common_address=47,
+            cause=c104.Cot.ACTIVATION,
+            qualifier=c104.Rqt.GENERAL,
+            freeze=c104.Frz.READ,
+        ):
+            print("  ERROR: counter_interrogation returned False", file=sys.stderr)
+            ok = False
+        time.sleep(0.7)
+        t30_after = _rx_type_ioa[(30, c104.Type.M_IT_NA_1)]
+        if t30_after <= t30_before:
+            print(
+                "  ERROR: expected at least one M_IT_NA_1 update for IOA 30 after counter CI",
+                file=sys.stderr,
+            )
+            ok = False
+        else:
+            print(f"    M_IT_NA_1 IOA=30 callbacks: {t30_before} -> {t30_after}")
+
+    if not hasattr(monitor_conn, "interrogation"):
+        print("  skip: connection has no interrogation")
+    else:
+        print("  interrogation(Qoi.GROUP_2)...")
+        t40_before = _rx_type_ioa[(40, c104.Type.M_ME_NA_1)]
+        if not monitor_conn.interrogation(
+            common_address=47,
+            cause=c104.Cot.ACTIVATION,
+            qualifier=c104.Qoi.GROUP_2,
+        ):
+            print("  ERROR: group-2 interrogation returned False", file=sys.stderr)
+            ok = False
+        time.sleep(0.7)
+        t40_after = _rx_type_ioa[(40, c104.Type.M_ME_NA_1)]
+        if t40_after <= t40_before:
+            print(
+                "  ERROR: expected at least one M_ME_NA_1 update for IOA 40 after group-2 GI",
+                file=sys.stderr,
+            )
+            ok = False
+        else:
+            print(f"    M_ME_NA_1 IOA=40 callbacks: {t40_before} -> {t40_after}")
+
+    if hasattr(monitor_conn, "test"):
+        # iec104-python registers the success waiter as C_TS_TA_1 even when
+        # with_time=False (C_TS_NA_1), so ACT_CON never matches and test() times
+        # out. Use the time-tagged variant so cmdId matches the response.
+        print("  test command (C_TS_TA_1, with time tag)...")
+        if not monitor_conn.test(common_address=47, with_time=True):
+            print("  ERROR: test() returned False", file=sys.stderr)
+            ok = False
+    else:
+        print("  skip: connection has no test()")
+
+    return ok
+
+
 async def main():
     loop = asyncio.get_running_loop()
 
@@ -128,6 +213,11 @@ async def main():
     p21 = monitor_station.add_point(io_address=21, type=c104.Type.M_ME_NB_1)
     p21.on_receive(callable=make_on_receive(loop))
 
+    p30 = monitor_station.add_point(io_address=30, type=c104.Type.M_IT_NA_1)
+    p30.on_receive(callable=make_on_receive(loop))
+    p40 = monitor_station.add_point(io_address=40, type=c104.Type.M_ME_NA_1)
+    p40.on_receive(callable=make_on_receive(loop))
+
     # Second connection: command-only points at the same IOAs (see module docstring).
     cmd_client = c104.Client(tick_rate_ms=1000, command_timeout_ms=5000)
     cmd_conn = cmd_client.add_connection(ip=HOST, port=PORT, init=c104.Init.NONE)
@@ -142,12 +232,19 @@ async def main():
     monitor_client.start()
     cmd_client.start()
 
+    feature_checks_ok = True
     try:
         await wait_open(monitor_conn, "monitor connection")
         await wait_open(cmd_conn, "command connection")
 
-        print(f"Connected to {HOST}:{PORT}, CA=47. Listening ~{TEST_SECONDS}s for measurements (GI + spontaneous)...")
-        await asyncio.sleep(1)
+        print(f"Connected to {HOST}:{PORT}, CA=47. Initial GI + measurements...")
+        await asyncio.sleep(1.5)
+
+        print("RTU system / interrogation feature checks...")
+        loop = asyncio.get_running_loop()
+        feature_checks_ok = await loop.run_in_executor(None, _run_rtu_server_feature_checks, monitor_conn)
+        if not feature_checks_ok:
+            print("One or more RTU feature checks failed.", file=sys.stderr)
 
         print("Sending process commands (second TCP client)...")
         cmd_sp_1.info = c104.SingleCmd(on=True, qualifier=c104.Qoc.NONE)
@@ -166,6 +263,7 @@ async def main():
         transmit_command(cmd_me_21, "C_SE_NB_1 IOA=21 scaled 2100")
         await asyncio.sleep(0.5)
 
+        print(f"Listening ~{TEST_SECONDS}s for further measurements (spontaneous / ticks)...")
         for second in range(TEST_SECONDS):
             if not _connection_usable(monitor_conn.state):
                 print("Monitor connection closed.")
@@ -186,6 +284,9 @@ async def main():
         sys.exit(1)
     if _command_transmits_failed:
         print("One or more command transmits failed — failing.", file=sys.stderr)
+        sys.exit(1)
+    if not feature_checks_ok:
+        print("RTU feature checks failed — failing.", file=sys.stderr)
         sys.exit(1)
 
 
