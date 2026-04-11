@@ -17,8 +17,11 @@
 //!   confirmation (echo).
 //! - **`C_CS_NA_1`**: positive confirmation echoing the time; stores the time
 //!   in [`SystemCommandContext::last_master_clock`] for application use.
-//! - **`C_CI_NA_1`**: negative activation confirmation (no counter model in
-//!   this RTU).
+//! - **`C_CI_NA_1`**: activation confirmation → `M_IT_*` counter data (from
+//!   in-memory integrated-total points and optional counter groups) →
+//!   activation termination; supports [`Frz`](crate::types::commands::Frz)
+//!   reset / freeze-and-reset on read addresses. Replace via
+//!   [`RtuCounterInterrogationHandler`].
 //! - **`C_RP_NA_1`**: positive activation confirmation echoing the reset
 //!   command (what “reset” does in your plant is application-defined; override
 //!   the handler to clear state, reconnect, etc.).
@@ -26,13 +29,21 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use super::{
-	commands::send_command_confirmation, model::PointAddress, output::monitoring_asdu_requested,
+	commands::send_command_confirmation,
+	model::{PointAddress, PointValue},
+	output::{
+		counter_interrogation_data, counter_interrogation_data_cot, monitoring_asdu_requested,
+	},
 };
 use crate::{
 	asdu::Asdu,
 	cot::Cot,
 	server::{ConnectionId, Server, error::ServerError},
-	types::{InformationObjects, time::Cp56Time2a},
+	types::{
+		GenericObject, InformationObjects,
+		commands::{CCiNa1, Frz, Rqt},
+		time::Cp56Time2a,
+	},
 	types_id::TypeId,
 };
 
@@ -50,10 +61,21 @@ pub struct SystemCommandContext<'a> {
 	pub connection_id: ConnectionId,
 	pub peer: SocketAddr,
 	pub asdu: &'a Asdu,
-	pub model: &'a HashMap<PointAddress, super::model::PointValue>,
+	pub model: &'a HashMap<PointAddress, PointValue>,
 	/// Last time accepted from a successful `C_CS_NA_1` (default handler
 	/// overwrites on each accepted clock sync).
 	pub last_master_clock: &'a mut Option<Cp56Time2a>,
+}
+
+/// Context for [`RtuCounterInterrogationHandler`]: mutable process image and
+/// counter-group map (`C_CI_NA_1` RQT 1–4).
+#[derive(Debug)]
+pub struct CounterInterrogationContext<'a> {
+	pub connection_id: ConnectionId,
+	pub peer: SocketAddr,
+	pub asdu: &'a Asdu,
+	pub model: &'a mut HashMap<PointAddress, PointValue>,
+	pub counter_groups: &'a HashMap<PointAddress, u8>,
 }
 
 /// `C_TS_NA_1` and `C_TS_TA_1` when [`Cot`] is [`Cot::Activation`] or
@@ -92,7 +114,7 @@ pub trait RtuClockSyncSystemHandler: Send + Sync {
 pub trait RtuCounterInterrogationHandler: Send + Sync {
 	async fn handle_counter_interrogation(
 		&self,
-		ctx: &mut SystemCommandContext<'_>,
+		ctx: &mut CounterInterrogationContext<'_>,
 		server: &Server,
 	) -> Result<(), ServerError>;
 }
@@ -310,28 +332,104 @@ impl RtuClockSyncSystemHandler for DefaultRtuClockSyncSystemHandler {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultRtuCounterInterrogationHandler;
 
+fn apply_counter_freeze_qualifier(
+	model: &mut HashMap<PointAddress, PointValue>,
+	read_addresses: &[PointAddress],
+	frz: Frz,
+) {
+	if matches!(frz, Frz::Read | Frz::Freeze) {
+		return;
+	}
+	for addr in read_addresses {
+		let Some(pv) = model.get_mut(addr) else {
+			continue;
+		};
+		match (pv, frz) {
+			(PointValue::MItNa1(m), Frz::Reset | Frz::FreezeAndReset) => {
+				m.bcr = 0;
+			}
+			(PointValue::MItTb1(m), Frz::Reset | Frz::FreezeAndReset) => {
+				m.bcr = 0;
+			}
+			_ => {}
+		}
+	}
+}
+
 #[async_trait::async_trait]
 impl RtuCounterInterrogationHandler for DefaultRtuCounterInterrogationHandler {
 	async fn handle_counter_interrogation(
 		&self,
-		ctx: &mut SystemCommandContext<'_>,
+		ctx: &mut CounterInterrogationContext<'_>,
 		server: &Server,
 	) -> Result<(), ServerError> {
 		let InformationObjects::CCiNa1(objs) = &ctx.asdu.information_objects else {
 			return Ok(());
 		};
-		if objs.is_empty() {
+		let Some(go) = objs.first() else {
+			return Ok(());
+		};
+		let rqt = go.object.rqt;
+		let frz = go.object.frz;
+		let co_ioa = go.address;
+
+		if !matches!(ctx.asdu.cot, Cot::Activation | Cot::Request) {
 			return Ok(());
 		}
+
+		let echo_ci = move || {
+			InformationObjects::CCiNa1(vec![GenericObject {
+				address: co_ioa,
+				object: CCiNa1 { rqt, frz },
+			}])
+		};
+
+		if matches!(rqt, Rqt::None | Rqt::Other(_)) {
+			send_command_confirmation(
+				server,
+				ctx.connection_id,
+				ctx.asdu,
+				TypeId::C_CI_NA_1,
+				echo_ci(),
+				true,
+			)
+			.await?;
+			return Ok(());
+		}
+
+		if counter_interrogation_data_cot(rqt).is_none() {
+			return Ok(());
+		}
+
 		send_command_confirmation(
 			server,
 			ctx.connection_id,
 			ctx.asdu,
 			TypeId::C_CI_NA_1,
-			InformationObjects::CCiNa1(objs.clone()),
-			true,
+			echo_ci(),
+			false,
 		)
 		.await?;
+
+		let ca = ctx.asdu.address_field;
+		let counter_read = counter_interrogation_data(ca, ctx.model, rqt, ctx.counter_groups);
+		for data_asdu in counter_read.asdus {
+			server.send_asdu(ctx.connection_id, data_asdu).await?;
+		}
+
+		apply_counter_freeze_qualifier(ctx.model, &counter_read.read_addresses, frz);
+
+		let actterm = Asdu {
+			type_id: TypeId::C_CI_NA_1,
+			cot: Cot::ActivationTermination,
+			originator_address: ctx.asdu.originator_address,
+			address_field: ctx.asdu.address_field,
+			sequence: ctx.asdu.sequence,
+			test: ctx.asdu.test,
+			negative: false,
+			information_objects: echo_ci(),
+		};
+		server.send_asdu(ctx.connection_id, actterm).await?;
 		Ok(())
 	}
 }

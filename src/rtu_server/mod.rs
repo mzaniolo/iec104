@@ -17,6 +17,12 @@
 //! confirmation → interrogation data → activation termination when data is
 //! supported.
 //!
+//! Counter interrogation: `C_CI_NA_1` with RQT general or groups 1–4 returns
+//! `M_IT_NA_1` / `M_IT_TB_1` with the matching counter-interrogation COT;
+//! assign counter groups via
+//! [`RtuInitialPoint::with_counter_interrogation_group`] or
+//! [`RtuServerHandle::register_point_with_counter_interrogation_group`].
+//!
 //! **Commands** ([`Cot::Request`](crate::cot::Cot::Request),
 //! [`Cot::Activation`](crate::cot::Cot::Activation), or
 //! [`Cot::Deactivation`](crate::cot::Cot::Deactivation) for
@@ -43,6 +49,7 @@
 //! The point set can be changed at runtime with
 //! [`RtuServerHandle::register_point`],
 //! [`RtuServerHandle::register_point_with_interrogation_group`],
+//! [`RtuServerHandle::register_point_with_counter_interrogation_group`],
 //! [`RtuServerHandle::register_points`], [`RtuServerHandle::unregister_point`],
 //! and [`RtuServerHandle::unregister_all`] (no spontaneous ASDU on
 //! register/unregister; clients see changes on the next interrogation
@@ -71,10 +78,11 @@ pub use error::{RtuHandleError, SetPointError};
 pub use model::{PointAddress, PointValue, RtuInitialMaps, RtuInitialPoint};
 use snafu::whatever;
 pub use system_command_handler::{
-	DefaultRtuClockSyncSystemHandler, DefaultRtuCounterInterrogationHandler,
-	DefaultRtuReadSystemHandler, DefaultRtuResetProcessSystemHandler, DefaultRtuTestSystemHandler,
-	RtuClockSyncSystemHandler, RtuCounterInterrogationHandler, RtuReadSystemHandler,
-	RtuResetProcessSystemHandler, RtuSystemHandlers, RtuTestSystemHandler, SystemCommandContext,
+	CounterInterrogationContext, DefaultRtuClockSyncSystemHandler,
+	DefaultRtuCounterInterrogationHandler, DefaultRtuReadSystemHandler,
+	DefaultRtuResetProcessSystemHandler, DefaultRtuTestSystemHandler, RtuClockSyncSystemHandler,
+	RtuCounterInterrogationHandler, RtuReadSystemHandler, RtuResetProcessSystemHandler,
+	RtuSystemHandlers, RtuTestSystemHandler, SystemCommandContext,
 };
 
 use crate::{config::ServerConfig, error::Error};
@@ -84,8 +92,9 @@ fn build_rtu_initial_maps(
 ) -> Result<RtuInitialMaps, Error> {
 	let mut points = HashMap::new();
 	let mut interrogation_groups = HashMap::new();
+	let mut counter_groups = HashMap::new();
 	for p in initial_points.into_iter().map(Into::into) {
-		let RtuInitialPoint { address, value, interrogation_group } = p;
+		let RtuInitialPoint { address, value, interrogation_group, counter_group } = p;
 		if let Some(g) = interrogation_group
 			&& !(1..=16).contains(&g)
 		{
@@ -95,11 +104,30 @@ fn build_rtu_initial_maps(
 				address.information_object_address
 			);
 		}
+		if let Some(cg) = counter_group {
+			if !(1..=4).contains(&cg) {
+				whatever!(
+					"invalid counter interrogation group {cg} for RTU point CA {} IOA {}",
+					address.common_address,
+					address.information_object_address
+				);
+			}
+			if !value.is_counter_integration() {
+				whatever!(
+					"counter interrogation group set for non M_IT point CA {} IOA {}",
+					address.common_address,
+					address.information_object_address
+				);
+			}
+		}
 		match points.entry(address) {
 			Entry::Vacant(e) => {
 				e.insert(value);
 				if let Some(g) = interrogation_group {
 					interrogation_groups.insert(address, g);
+				}
+				if let Some(cg) = counter_group {
+					counter_groups.insert(address, cg);
 				}
 			}
 			Entry::Occupied(_) => {
@@ -107,7 +135,7 @@ fn build_rtu_initial_maps(
 			}
 		}
 	}
-	Ok(RtuInitialMaps { points, interrogation_groups })
+	Ok(RtuInitialMaps { points, interrogation_groups, counter_groups })
 }
 
 /// Starts the low-level [`crate::server::Server`] and a single actor that owns
@@ -150,7 +178,7 @@ impl RtuServer {
 		let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 		let ingress = actor::NetworkIngress::new(tx.clone());
 		let server = crate::server::Server::start(config, ingress).await?;
-		let RtuInitialMaps { points, interrogation_groups } =
+		let RtuInitialMaps { points, interrogation_groups, counter_groups } =
 			build_rtu_initial_maps(initial_points)?;
 		let server_for_actor = server.clone();
 		tokio::spawn(actor::run_actor(
@@ -158,6 +186,7 @@ impl RtuServer {
 			server_for_actor,
 			points,
 			interrogation_groups,
+			counter_groups,
 			command_handler,
 			system_handlers,
 		));
@@ -213,19 +242,11 @@ impl RtuServerHandle {
 				address,
 				initial,
 				interrogation_group: None,
+				counter_group: None,
 				reply: reply_tx,
 			})
 			.map_err(|_| RtuHandleError::Disconnected)?;
-		match reply_rx.await {
-			Err(_) => Err(RtuHandleError::ActorStopped),
-			Ok(Ok(())) => Ok(()),
-			Ok(Err(actor::RegisterPointError::AlreadyRegistered(address))) => {
-				Err(RtuHandleError::AlreadyRegistered { address })
-			}
-			Ok(Err(actor::RegisterPointError::InvalidInterrogationGroup { group })) => {
-				Err(RtuHandleError::InvalidInterrogationGroup { group })
-			}
-		}
+		finish_actor_register_reply(reply_rx).await
 	}
 
 	/// Like [`Self::register_point`], but assigns an IEC interrogation group
@@ -246,19 +267,39 @@ impl RtuServerHandle {
 				address,
 				initial,
 				interrogation_group: Some(interrogation_group),
+				counter_group: None,
 				reply: reply_tx,
 			})
 			.map_err(|_| RtuHandleError::Disconnected)?;
-		match reply_rx.await {
-			Err(_) => Err(RtuHandleError::ActorStopped),
-			Ok(Ok(())) => Ok(()),
-			Ok(Err(actor::RegisterPointError::AlreadyRegistered(address))) => {
-				Err(RtuHandleError::AlreadyRegistered { address })
-			}
-			Ok(Err(actor::RegisterPointError::InvalidInterrogationGroup { group })) => {
-				Err(RtuHandleError::InvalidInterrogationGroup { group })
-			}
+		finish_actor_register_reply(reply_rx).await
+	}
+
+	/// Like [`Self::register_point`], but assigns a counter interrogation group
+	/// **1..=4** so the integrated-total point is included in `C_CI_NA_1` RQT
+	/// 1–4 as well as in general counter interrogation (RQT 5).
+	pub async fn register_point_with_counter_interrogation_group(
+		&self,
+		address: PointAddress,
+		initial: PointValue,
+		counter_group: u8,
+	) -> Result<(), RtuHandleError> {
+		if !(1..=4).contains(&counter_group) {
+			return Err(RtuHandleError::InvalidCounterInterrogationGroup { group: counter_group });
 		}
+		if !initial.is_counter_integration() {
+			return Err(RtuHandleError::CounterGroupRequiresCounterPoint);
+		}
+		let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+		self.tx
+			.send(actor::ActorMsg::Register {
+				address,
+				initial,
+				interrogation_group: None,
+				counter_group: Some(counter_group),
+				reply: reply_tx,
+			})
+			.map_err(|_| RtuHandleError::Disconnected)?;
+		finish_actor_register_reply(reply_rx).await
 	}
 
 	/// Remove a point from the model. Fails if the address is not present.
@@ -292,19 +333,7 @@ impl RtuServerHandle {
 		self.tx
 			.send(actor::ActorMsg::RegisterPoints { points, reply: reply_tx })
 			.map_err(|_| RtuHandleError::Disconnected)?;
-		match reply_rx.await {
-			Err(_) => Err(RtuHandleError::ActorStopped),
-			Ok(Ok(())) => Ok(()),
-			Ok(Err(actor::RegisterPointsError::DuplicateInInput)) => {
-				Err(RtuHandleError::DuplicateAddressInInput)
-			}
-			Ok(Err(actor::RegisterPointsError::AlreadyInModel { address })) => {
-				Err(RtuHandleError::AlreadyRegistered { address })
-			}
-			Ok(Err(actor::RegisterPointsError::InvalidInterrogationGroup { group })) => {
-				Err(RtuHandleError::InvalidInterrogationGroup { group })
-			}
-		}
+		finish_actor_register_reply(reply_rx).await
 	}
 
 	/// Remove every point from the model. Returns how many entries were
@@ -320,6 +349,54 @@ impl RtuServerHandle {
 		match reply_rx.await {
 			Err(_) => Err(RtuHandleError::ActorStopped),
 			Ok(n) => Ok(n),
+		}
+	}
+}
+
+async fn finish_actor_register_reply<E>(
+	reply: tokio::sync::oneshot::Receiver<Result<(), E>>,
+) -> Result<(), RtuHandleError>
+where
+	E: Into<RtuHandleError>,
+{
+	reply.await.map_err(|_| RtuHandleError::ActorStopped).and_then(|r| r.map_err(Into::into))
+}
+
+impl From<actor::RegisterPointError> for RtuHandleError {
+	fn from(e: actor::RegisterPointError) -> Self {
+		match e {
+			actor::RegisterPointError::AlreadyRegistered(address) => {
+				Self::AlreadyRegistered { address }
+			}
+			actor::RegisterPointError::InvalidInterrogationGroup { group } => {
+				Self::InvalidInterrogationGroup { group }
+			}
+			actor::RegisterPointError::InvalidCounterInterrogationGroup { group } => {
+				Self::InvalidCounterInterrogationGroup { group }
+			}
+			actor::RegisterPointError::CounterGroupRequiresCounterPoint => {
+				Self::CounterGroupRequiresCounterPoint
+			}
+		}
+	}
+}
+
+impl From<actor::RegisterPointsError> for RtuHandleError {
+	fn from(e: actor::RegisterPointsError) -> Self {
+		match e {
+			actor::RegisterPointsError::DuplicateInInput => Self::DuplicateAddressInInput,
+			actor::RegisterPointsError::AlreadyInModel { address } => {
+				Self::AlreadyRegistered { address }
+			}
+			actor::RegisterPointsError::InvalidInterrogationGroup { group } => {
+				Self::InvalidInterrogationGroup { group }
+			}
+			actor::RegisterPointsError::InvalidCounterInterrogationGroup { group } => {
+				Self::InvalidCounterInterrogationGroup { group }
+			}
+			actor::RegisterPointsError::CounterGroupRequiresCounterPoint => {
+				Self::CounterGroupRequiresCounterPoint
+			}
 		}
 	}
 }
