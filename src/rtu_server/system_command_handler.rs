@@ -1,12 +1,13 @@
 //! Pluggable handling of standard **system** ASDUs (test, read, clock sync,
-//! counter interrogation). Process commands (`C_SC_*`, `C_SE_*`) stay on
-//! [`super::command_handler::RtuCommandHandler`].
+//! counter interrogation, reset process). Process commands (`C_SC_*`, `C_SE_*`)
+//! stay on [`super::command_handler::RtuCommandHandler`].
 //!
 //! Compose [`RtuTestSystemHandler`], [`RtuReadSystemHandler`],
-//! [`RtuClockSyncSystemHandler`], and [`RtuCounterInterrogationHandler`] in
-//! [`RtuSystemHandlers`]. Swap individual [`Arc`] fields for custom behaviour;
-//! use [`RtuSystemHandlers::default`] for library defaults. The actor routes
-//! ingress ASDUs by type ID and calls the matching handler.
+//! [`RtuClockSyncSystemHandler`], [`RtuCounterInterrogationHandler`], and
+//! [`RtuResetProcessSystemHandler`] in [`RtuSystemHandlers`]. Swap individual
+//! [`Arc`] fields for custom behaviour; use [`RtuSystemHandlers::default`] for
+//! library defaults. The actor routes ingress ASDUs by type ID and calls the
+//! matching handler.
 //!
 //! Default behaviour:
 //! - **`C_TS_NA_1` / `C_TS_TA_1`**: positive activation confirmation echoing
@@ -18,11 +19,14 @@
 //!   in [`SystemCommandContext::last_master_clock`] for application use.
 //! - **`C_CI_NA_1`**: negative activation confirmation (no counter model in
 //!   this RTU).
+//! - **`C_RP_NA_1`**: positive activation confirmation echoing the reset
+//!   command (what “reset” does in your plant is application-defined; override
+//!   the handler to clear state, reconnect, etc.).
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use super::{
-	commands::send_activation_confirmation, model::PointAddress, output::monitoring_asdu_requested,
+	commands::send_command_confirmation, model::PointAddress, output::monitoring_asdu_requested,
 };
 use crate::{
 	asdu::Asdu,
@@ -93,7 +97,17 @@ pub trait RtuCounterInterrogationHandler: Send + Sync {
 	) -> Result<(), ServerError>;
 }
 
-/// Composes the four system ASDU groups. Replace individual [`Arc`] fields to
+/// `C_RP_NA_1` when [`Cot`] is [`Cot::Activation`] or [`Cot::Request`].
+#[async_trait::async_trait]
+pub trait RtuResetProcessSystemHandler: Send + Sync {
+	async fn handle_reset_process(
+		&self,
+		ctx: &mut SystemCommandContext<'_>,
+		server: &Server,
+	) -> Result<(), ServerError>;
+}
+
+/// Composes the five system ASDU groups. Replace individual [`Arc`] fields to
 /// override only that behaviour; use [`Default`] for library defaults on the
 /// rest.
 #[derive(Clone)]
@@ -102,6 +116,7 @@ pub struct RtuSystemHandlers {
 	pub read: Arc<dyn RtuReadSystemHandler>,
 	pub clock_sync: Arc<dyn RtuClockSyncSystemHandler>,
 	pub counter_interrogation: Arc<dyn RtuCounterInterrogationHandler>,
+	pub reset_process: Arc<dyn RtuResetProcessSystemHandler>,
 }
 
 impl std::fmt::Debug for RtuSystemHandlers {
@@ -117,6 +132,7 @@ impl Default for RtuSystemHandlers {
 			read: Arc::new(DefaultRtuReadSystemHandler),
 			clock_sync: Arc::new(DefaultRtuClockSyncSystemHandler),
 			counter_interrogation: Arc::new(DefaultRtuCounterInterrogationHandler),
+			reset_process: Arc::new(DefaultRtuResetProcessSystemHandler),
 		}
 	}
 }
@@ -146,6 +162,15 @@ impl RtuSystemHandlers {
 		counter_interrogation: Arc<dyn RtuCounterInterrogationHandler>,
 	) -> Self {
 		self.counter_interrogation = counter_interrogation;
+		self
+	}
+
+	#[must_use]
+	pub fn with_reset_process(
+		mut self,
+		reset_process: Arc<dyn RtuResetProcessSystemHandler>,
+	) -> Self {
+		self.reset_process = reset_process;
 		self
 	}
 }
@@ -183,7 +208,7 @@ impl RtuTestSystemHandler for DefaultRtuTestSystemHandler {
 			}
 			_ => return Ok(()),
 		};
-		send_activation_confirmation(
+		send_command_confirmation(
 			server,
 			ctx.connection_id,
 			ctx.asdu,
@@ -224,7 +249,7 @@ impl RtuReadSystemHandler for DefaultRtuReadSystemHandler {
 		}
 
 		let echo = InformationObjects::CRdNa1(objs.clone());
-		send_activation_confirmation(
+		send_command_confirmation(
 			server,
 			ctx.connection_id,
 			ctx.asdu,
@@ -269,7 +294,7 @@ impl RtuClockSyncSystemHandler for DefaultRtuClockSyncSystemHandler {
 
 		*ctx.last_master_clock = Some(go.object.time.clone());
 
-		send_activation_confirmation(
+		send_command_confirmation(
 			server,
 			ctx.connection_id,
 			ctx.asdu,
@@ -298,13 +323,42 @@ impl RtuCounterInterrogationHandler for DefaultRtuCounterInterrogationHandler {
 		if objs.is_empty() {
 			return Ok(());
 		}
-		send_activation_confirmation(
+		send_command_confirmation(
 			server,
 			ctx.connection_id,
 			ctx.asdu,
 			TypeId::C_CI_NA_1,
 			InformationObjects::CCiNa1(objs.clone()),
 			true,
+		)
+		.await?;
+		Ok(())
+	}
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultRtuResetProcessSystemHandler;
+
+#[async_trait::async_trait]
+impl RtuResetProcessSystemHandler for DefaultRtuResetProcessSystemHandler {
+	async fn handle_reset_process(
+		&self,
+		ctx: &mut SystemCommandContext<'_>,
+		server: &Server,
+	) -> Result<(), ServerError> {
+		let InformationObjects::CRpNa1(objs) = &ctx.asdu.information_objects else {
+			return Ok(());
+		};
+		if objs.is_empty() {
+			return Ok(());
+		}
+		send_command_confirmation(
+			server,
+			ctx.connection_id,
+			ctx.asdu,
+			TypeId::C_RP_NA_1,
+			InformationObjects::CRpNa1(objs.clone()),
+			false,
 		)
 		.await?;
 		Ok(())

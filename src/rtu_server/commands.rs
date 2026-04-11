@@ -1,6 +1,6 @@
 //! Dispatch incoming command ASDUs to
 //! [`super::command_handler::RtuCommandHandler`], apply returned model updates,
-//! send activation confirmation.
+//! send activation or deactivation confirmation (COT matches IEC 60870-5-104).
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
@@ -18,11 +18,11 @@ use crate::{
 
 #[must_use]
 const fn is_command_cot(cot: Cot) -> bool {
-	matches!(cot, Cot::Request | Cot::Activation)
+	matches!(cot, Cot::Request | Cot::Activation | Cot::Deactivation)
 }
 
 /// Process commands (`C_SC_*`, `C_DC_*`, `C_RC_*`, `C_SE_*`, `C_BO_*`) with
-/// [`Cot::Request`] or [`Cot::Activation`].
+/// [`Cot::Request`], [`Cot::Activation`], or [`Cot::Deactivation`].
 #[must_use]
 pub(super) const fn is_process_command(asdu: &Asdu) -> bool {
 	is_command_cot(asdu.cot) && is_supported_command_type(asdu.type_id)
@@ -51,13 +51,14 @@ pub(super) const fn is_supported_command_type(type_id: TypeId) -> bool {
 
 const fn command_confirmation_asdu(
 	incoming: &Asdu,
+	reply_cot: Cot,
 	type_id: TypeId,
 	information_objects: crate::types::InformationObjects,
 	negative: bool,
 ) -> Asdu {
 	Asdu {
 		type_id,
-		cot: Cot::ActivationConfirmation,
+		cot: reply_cot,
 		originator_address: incoming.originator_address,
 		address_field: incoming.address_field,
 		sequence: incoming.sequence,
@@ -67,7 +68,15 @@ const fn command_confirmation_asdu(
 	}
 }
 
-pub(super) async fn send_activation_confirmation(
+#[must_use]
+const fn command_reply_cot(incoming_cot: Cot) -> Cot {
+	match incoming_cot {
+		Cot::Deactivation => Cot::DeactivationConfirmation,
+		_ => Cot::ActivationConfirmation,
+	}
+}
+
+pub(super) async fn send_command_confirmation(
 	server: &Server,
 	connection_id: ConnectionId,
 	incoming: &Asdu,
@@ -75,7 +84,8 @@ pub(super) async fn send_activation_confirmation(
 	objs: crate::types::InformationObjects,
 	negative: bool,
 ) -> Result<(), ServerError> {
-	let reply = command_confirmation_asdu(incoming, type_id, objs, negative);
+	let reply_cot = command_reply_cot(incoming.cot);
+	let reply = command_confirmation_asdu(incoming, reply_cot, type_id, objs, negative);
 	server.send_asdu(connection_id, reply).await
 }
 
@@ -125,7 +135,7 @@ pub(super) async fn handle_process_command(
 		apply_model_updates(model, server, &handling.apply_updates).await?;
 	}
 
-	send_activation_confirmation(
+	send_command_confirmation(
 		server,
 		connection_id,
 		asdu,
@@ -135,4 +145,17 @@ pub(super) async fn handle_process_command(
 	)
 	.await?;
 	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::command_reply_cot;
+	use crate::cot::Cot;
+
+	#[test]
+	fn command_reply_cot_matches_incoming() {
+		assert_eq!(command_reply_cot(Cot::Activation), Cot::ActivationConfirmation);
+		assert_eq!(command_reply_cot(Cot::Request), Cot::ActivationConfirmation);
+		assert_eq!(command_reply_cot(Cot::Deactivation), Cot::DeactivationConfirmation);
+	}
 }
