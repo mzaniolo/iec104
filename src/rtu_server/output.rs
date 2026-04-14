@@ -19,6 +19,8 @@ use crate::{
 
 /// Maximum number of information objects per ASDU (7-bit count field).
 pub(super) const MAX_OBJECTS_PER_ASDU: usize = 127;
+/// Global common address for global interrogation.
+const GLOBAL_COMMON_ADDRESS: u16 = 0xFFFF;
 
 /// [`Cot`] for monitoring ASDUs answering `C_IC_NA_1` with this QOI (global or
 /// group 1–16). [`None`] for [`Qoi::Unused`], [`Qoi::Other`], etc.
@@ -212,7 +214,7 @@ pub(super) fn interrogation_data_asdus(
 	let mut m_ep_tf: Vec<(u32, MEpTf1)> = Vec::new();
 
 	for (addr, v) in model.iter() {
-		if addr.common_address != ca {
+		if ca != GLOBAL_COMMON_ADDRESS && addr.common_address != ca {
 			continue;
 		}
 		if !point_included_in_interrogation(*addr, qoi, interrogation_groups) {
@@ -341,7 +343,7 @@ pub(super) fn counter_interrogation_data(
 	let mut m_it_na: Vec<(u32, MItNa1)> = Vec::new();
 	let mut m_it_tb: Vec<(u32, MItTb1)> = Vec::new();
 	for (addr, v) in model.iter() {
-		if addr.common_address != ca {
+		if ca != GLOBAL_COMMON_ADDRESS && addr.common_address != ca {
 			continue;
 		}
 		if !v.is_counter_integration() {
