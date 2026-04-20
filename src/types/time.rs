@@ -249,7 +249,7 @@ impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
 
 	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Local>, Self::Error> {
-		use chrono::{Datelike, Timelike};
+		use chrono::{Datelike, TimeZone, Timelike};
 
 		if self.iv {
 			return InvalidError.fail();
@@ -259,21 +259,22 @@ impl TryInto<chrono::DateTime<chrono::Local>> for Cp56Time2a {
 		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
-		let t = chrono::Local::now()
+		let t = chrono::Local
+			.with_ymd_and_hms(2000 + i32::from(self.year), 1, 1, 0, 0, 0)
+			.earliest()
+			.ok_or_else(|| YearsError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
 			.with_minute(u32::from(self.min))
 			.ok_or_else(|| MillisecondsError.build())?
 			.with_second(seconds.into())
 			.ok_or_else(|| SecondsError.build())?
 			.with_nanosecond(u32::from(ms) * 1_000_000)
-			.ok_or_else(|| NanosecondsError.build())?
-			.with_hour(u32::from(self.hour))
-			.ok_or_else(|| HoursError.build())?
-			.with_day(u32::from(self.day))
-			.ok_or_else(|| DaysError.build())?
-			.with_month(u32::from(self.month))
-			.ok_or_else(|| MonthsError.build())?
-			.with_year(2000 + i32::from(self.year))
-			.ok_or_else(|| YearsError.build())?;
+			.ok_or_else(|| NanosecondsError.build())?;
 		Ok(t)
 	}
 }
@@ -284,7 +285,7 @@ impl TryInto<chrono::DateTime<chrono::Utc>> for Cp56Time2a {
 
 	/// Note: Daylight Saving Time ( DST ) is **NOT** supported yet!
 	fn try_into(self) -> Result<chrono::DateTime<chrono::Utc>, Self::Error> {
-		use chrono::{Datelike, Timelike};
+		use chrono::{Datelike, TimeZone, Timelike};
 
 		if self.iv {
 			return InvalidError.fail();
@@ -294,21 +295,22 @@ impl TryInto<chrono::DateTime<chrono::Utc>> for Cp56Time2a {
 		}
 		let seconds = self.ms / 1000;
 		let ms = self.ms % 1000;
-		let t = chrono::Utc::now()
+		let t = chrono::Utc
+			.with_ymd_and_hms(2000 + i32::from(self.year), 1, 1, 0, 0, 0)
+			.earliest()
+			.ok_or_else(|| YearsError.build())?
+			.with_month(u32::from(self.month))
+			.ok_or_else(|| MonthsError.build())?
+			.with_day(u32::from(self.day))
+			.ok_or_else(|| DaysError.build())?
+			.with_hour(u32::from(self.hour))
+			.ok_or_else(|| HoursError.build())?
 			.with_minute(u32::from(self.min))
 			.ok_or_else(|| MillisecondsError.build())?
 			.with_second(seconds.into())
 			.ok_or_else(|| SecondsError.build())?
 			.with_nanosecond(u32::from(ms) * 1_000_000)
-			.ok_or_else(|| NanosecondsError.build())?
-			.with_hour(u32::from(self.hour))
-			.ok_or_else(|| HoursError.build())?
-			.with_day(u32::from(self.day))
-			.ok_or_else(|| DaysError.build())?
-			.with_month(u32::from(self.month))
-			.ok_or_else(|| MonthsError.build())?
-			.with_year(2000 + i32::from(self.year))
-			.ok_or_else(|| YearsError.build())?;
+			.ok_or_else(|| NanosecondsError.build())?;
 		Ok(t)
 	}
 }
