@@ -439,7 +439,7 @@ mod counter_interrogation_rqt_tests {
 	use crate::{
 		cot::Cot,
 		rtu_server::model::{PointAddress, PointValue},
-		types::{MItNa1, commands::Rqt, quality_descriptors::Qds},
+		types::{MItNa1, commands::Rqt, quality_descriptors::SeqQd},
 	};
 
 	#[test]
@@ -461,7 +461,7 @@ mod counter_interrogation_rqt_tests {
 		let ca = 1_u16;
 		let c1 = PointAddress::new(ca, 10);
 		let c2 = PointAddress::new(ca, 20);
-		let v = PointValue::MItNa1(MItNa1 { bcr: 1, qds: Qds::default() });
+		let v = PointValue::MItNa1(MItNa1 { bcr: 1, sqd: SeqQd::default() });
 		let mut model = HashMap::new();
 		model.insert(c1, v.clone());
 		model.insert(c2, v);
@@ -489,7 +489,7 @@ mod counter_interrogation_rqt_tests {
 		let ca = 1_u16;
 		let a = PointAddress::new(ca, 1);
 		let mut model = HashMap::new();
-		model.insert(a, PointValue::MItNa1(MItNa1 { bcr: 0, qds: Qds::default() }));
+		model.insert(a, PointValue::MItNa1(MItNa1 { bcr: 0, sqd: SeqQd::default() }));
 		let groups = HashMap::new();
 		let d = counter_interrogation_data(ca, &model, Rqt::None, &groups);
 		assert!(d.asdus.is_empty());

@@ -16,7 +16,7 @@ use iec104::{
 		InformationObjects, MItNa1, MMeNa1,
 		commands::{Frz, Qoi, Qrp, Rqt},
 		information_elements::Spi,
-		quality_descriptors::Qds,
+		quality_descriptors::{Qds, SeqQd},
 		time::Cp56Time2a,
 	},
 	types_id::TypeId,
@@ -219,7 +219,7 @@ async fn counter_interrogation_general_returns_m_it_and_termination() {
 	let ca = 16_u16;
 	let initial = vec![RtuInitialPoint::new(
 		PointAddress::new(ca, 50),
-		PointValue::MItNa1(MItNa1 { bcr: 99, qds: Qds::default() }),
+		PointValue::MItNa1(MItNa1 { bcr: 99, sqd: SeqQd::default() }),
 	)];
 	let (_rtu, client, mut rx) =
 		spawn_rtu_and_client(initial, Arc::new(RejectAllCommands), RtuSystemHandlers::default())

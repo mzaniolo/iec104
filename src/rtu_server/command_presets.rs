@@ -230,12 +230,14 @@ impl RtuCommandHandler for MapCommandsToSameIoaMonitoring {
 								match cmd.rco.rcs {
 									Rcs::Increment => {
 										let mut m = st.clone();
-										m.vti.value = m.vti.value.saturating_add(1).min(127);
+										// VTI value is 7-bit signed on the wire (-64..=63).
+										m.vti.value = m.vti.value.saturating_add(1).min(63);
 										apply_updates.push((addr, PointValue::MStNa1(m)));
 									}
 									Rcs::Decrement => {
 										let mut m = st.clone();
-										m.vti.value = m.vti.value.saturating_sub(1);
+										// VTI value is 7-bit signed on the wire (-64..=63).
+										m.vti.value = m.vti.value.saturating_sub(1).max(-64);
 										apply_updates.push((addr, PointValue::MStNa1(m)));
 									}
 									Rcs::None | Rcs::Invalid => negative = true,
@@ -254,12 +256,14 @@ impl RtuCommandHandler for MapCommandsToSameIoaMonitoring {
 								match cmd.rco.rcs {
 									Rcs::Increment => {
 										let mut m = st.clone();
-										m.vti.value = m.vti.value.saturating_add(1).min(127);
+										// VTI value is 7-bit signed on the wire (-64..=63).
+										m.vti.value = m.vti.value.saturating_add(1).min(63);
 										apply_updates.push((addr, PointValue::MStNa1(m)));
 									}
 									Rcs::Decrement => {
 										let mut m = st.clone();
-										m.vti.value = m.vti.value.saturating_sub(1);
+										// VTI value is 7-bit signed on the wire (-64..=63).
+										m.vti.value = m.vti.value.saturating_sub(1).max(-64);
 										apply_updates.push((addr, PointValue::MStNa1(m)));
 									}
 									Rcs::None | Rcs::Invalid => negative = true,

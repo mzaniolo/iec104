@@ -28,7 +28,7 @@ use iec104::{
 	types::{
 		MItNa1, MMeNa1, MMeNb1, MMeNc1, MSpNa1,
 		information_elements::{Siq, Spi},
-		quality_descriptors::Qds,
+		quality_descriptors::{Qds, SeqQd},
 	},
 };
 use snafu::{ResultExt as _, Whatever};
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Whatever> {
 		// Integrated total + counter interrogation group 1 (RQT 1)
 		RtuInitialPoint::with_counter_interrogation_group(
 			PointAddress::new(47, 30),
-			PointValue::MItNa1(MItNa1 { bcr: 12_345, qds: Qds::default() }),
+			PointValue::MItNa1(MItNa1 { bcr: 12_345, sqd: SeqQd::default() }),
 			1,
 		)
 		.expect("IOA 30: M_IT + counter group 1"),

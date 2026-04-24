@@ -125,10 +125,14 @@ impl Dpi {
 }
 
 /// Value with transient state indication
+///
+/// Per IEC 60870-5-101 §7.2.6.5: bits 0–6 of byte 0 hold a **signed 7-bit**
+/// value in the range −64 … +63 (two's complement), bit 7 is the transient
+/// flag, and byte 1 holds the standard quality descriptor.
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct Vti {
-	/// Value
-	pub value: u8,
+	/// Value (signed, range −64 … +63)
+	pub value: i8,
 	/// Transient state indication
 	pub transient: bool,
 	/// Quality descriptor
@@ -138,7 +142,14 @@ pub struct Vti {
 impl Vti {
 	#[must_use]
 	pub const fn from_byte(bytes: [u8; 2]) -> Self {
-		let value = bytes[0] & 0b0111_1111;
+		// Sign-extend the 7-bit value: if bit 6 is set, fill bit 7 to keep
+		// the two's-complement sign.
+		let raw = bytes[0] & 0b0111_1111;
+		let value = if raw & 0b0100_0000 != 0 {
+			(raw | 0b1000_0000).cast_signed()
+		} else {
+			raw.cast_signed()
+		};
 		let transient = bytes[0] & 0b1000_0000 != 0;
 		let qds = Qds::from_byte(bytes[1]);
 		Vti { value, transient, qds }
@@ -147,7 +158,7 @@ impl Vti {
 	#[must_use]
 	pub const fn to_bytes(&self) -> [u8; 2] {
 		let mut bytes: [u8; 2] = [0, 0];
-		bytes[0] |= self.value & 0b0111_1111;
+		bytes[0] |= (self.value as u8) & 0b0111_1111;
 		bytes[0] |= (self.transient as u8) << 7;
 		bytes[1] |= self.qds.to_byte();
 		bytes
@@ -378,5 +389,54 @@ impl Coi {
 			Coi::RemoteReset => 2,
 			Coi::Other(byte) => *byte,
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn vti_round_trip(bytes: [u8; 2]) -> Vti {
+		let v = Vti::from_byte(bytes);
+		assert_eq!(v.to_bytes(), bytes, "wire bytes must match after round-trip");
+		v
+	}
+
+	#[test]
+	fn vti_decodes_max_positive() {
+		// value bits = 0b011_1111 = 63, transient=0
+		let v = vti_round_trip([0b0011_1111, 0]);
+		assert_eq!(v.value, 63);
+		assert!(!v.transient);
+	}
+
+	#[test]
+	fn vti_decodes_minus_one() {
+		// 7-bit value 0b111_1111 sign-extends to -1 (i8)
+		let v = vti_round_trip([0b0111_1111, 0]);
+		assert_eq!(v.value, -1);
+	}
+
+	#[test]
+	fn vti_decodes_min_negative() {
+		// 7-bit value 0b100_0000 sign-extends to -64
+		let v = vti_round_trip([0b0100_0000, 0]);
+		assert_eq!(v.value, -64);
+	}
+
+	#[test]
+	fn vti_transient_flag_independent_of_value() {
+		// value = -32, transient = 1 -> 0b1110_0000 (0xE0)
+		let v = vti_round_trip([0b1110_0000, 0]);
+		assert_eq!(v.value, -32);
+		assert!(v.transient);
+	}
+
+	#[test]
+	fn vti_with_quality_byte() {
+		// value = 5, transient = 0, qds = IV (0x80)
+		let v = vti_round_trip([0x05, 0x80]);
+		assert_eq!(v.value, 5);
+		assert!(v.qds.iv);
 	}
 }

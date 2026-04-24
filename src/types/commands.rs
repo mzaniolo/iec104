@@ -64,7 +64,7 @@ impl Sco {
 	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
-		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
+		let qu = Qu::from_byte((byte & 0b0111_1100) >> 2);
 		let scs = Spi::from_byte(byte & 0b0000_0001);
 		Sco { se, qu, scs }
 	}
@@ -94,7 +94,7 @@ impl Dco {
 	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
-		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
+		let qu = Qu::from_byte((byte & 0b0111_1100) >> 2);
 		let dcs = Dpi::from_byte(byte & 0b0000_0011);
 		Dco { se, qu, dcs }
 	}
@@ -161,7 +161,7 @@ impl Rco {
 	#[must_use]
 	pub const fn from_byte(byte: u8) -> Self {
 		let se = SelectExecute::from_bool(byte & 0b1000_0000 != 0);
-		let qu = Qu::from_byte(byte & 0b0111_1100 >> 2);
+		let qu = Qu::from_byte((byte & 0b0111_1100) >> 2);
 		let rcs = Rcs::from_byte(byte & 0b0000_0011);
 		Rco { se, qu, rcs }
 	}
@@ -459,7 +459,7 @@ impl ToBytes for CrcNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeNa1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 }
@@ -467,7 +467,7 @@ pub struct CSeNa1 {
 impl FromBytes for CSeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qos })
 	}
@@ -486,7 +486,7 @@ impl ToBytes for CSeNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeNb1 {
 	/// Scaled value
-	pub sva: u16,
+	pub sva: i16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 }
@@ -494,7 +494,7 @@ pub struct CSeNb1 {
 impl FromBytes for CSeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qos })
 	}
@@ -653,7 +653,7 @@ impl ToBytes for CrcTa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeTa1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
@@ -663,7 +663,7 @@ pub struct CSeTa1 {
 impl FromBytes for CSeTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -687,7 +687,7 @@ impl ToBytes for CSeTa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct CSeTb1 {
 	/// Scaled value
-	pub sva: u16,
+	pub sva: i16,
 	/// Qualifier of set point command
 	pub qos: Qos,
 	/// Time tag
@@ -697,7 +697,7 @@ pub struct CSeTb1 {
 impl FromBytes for CSeTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qos = Qos::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -973,5 +973,98 @@ impl ToBytes for CTsTa1 {
 		buffer.extend_from_slice(&self.tsc.to_le_bytes());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// ---- Sco / Dco / Rco: QU lives in bits 2-6 ----
+	//
+	// Pre-fix bug: `byte & 0b0111_1100 >> 2` was `byte & 0b0001_1111` (bits
+	// 0-4) due to operator precedence, mixing in SCS/DCS/RCS bits and
+	// truncating QU's high bit.
+
+	#[test]
+	fn sco_qu_short_pulse_round_trip() {
+		// S/E=Execute, QU=ShortPulse(1)<<2 = 0b0000_0100, SCS=On(1)
+		let sco = Sco::from_byte(0b0000_0101);
+		assert_eq!(sco.qu, Qu::ShortPulse);
+		assert_eq!(sco.scs, Spi::On);
+		assert_eq!(sco.se, SelectExecute::Execute);
+		assert_eq!(sco.to_byte(), 0b0000_0101);
+	}
+
+	#[test]
+	fn sco_qu_persistent_extracted_correctly() {
+		// QU=Persistent(3)<<2 = 0b0000_1100, SCS=Off
+		// Pre-fix this would have parsed QU as Qu::Other(0xC & 0x1F = 12).
+		let sco = Sco::from_byte(0b0000_1100);
+		assert_eq!(sco.qu, Qu::Persistent);
+		assert_eq!(sco.scs, Spi::Off);
+	}
+
+	#[test]
+	fn sco_qu_high_bit_preserved() {
+		// QU=16 (Other) needs bit 6 set: 16<<2 = 0b0100_0000
+		// Pre-fix: byte & 0b0001_1111 dropped bit 6 → wrong QU.
+		let sco = Sco::from_byte(0b0100_0000);
+		assert_eq!(sco.qu, Qu::Other(16));
+	}
+
+	#[test]
+	fn sco_select_bit_independent_of_qu() {
+		// S/E=Select(1), QU=Unspecified, SCS=On -> 0b1000_0001 = 0x81
+		let sco = Sco::from_byte(0x81);
+		assert_eq!(sco.se, SelectExecute::Select);
+		assert_eq!(sco.qu, Qu::Unspecified);
+		assert_eq!(sco.scs, Spi::On);
+		assert_eq!(sco.to_byte(), 0x81);
+	}
+
+	#[test]
+	fn dco_qu_long_pulse_round_trip() {
+		// QU=LongPulse(2)<<2 = 0b0000_1000, DCS=On(2)
+		let dco = Dco::from_byte(0b0000_1010);
+		assert_eq!(dco.qu, Qu::LongPulse);
+		assert_eq!(dco.dcs, Dpi::On);
+		assert_eq!(dco.to_byte(), 0b0000_1010);
+	}
+
+	#[test]
+	fn rco_qu_short_pulse_with_increment() {
+		// QU=ShortPulse(1)<<2 = 0b0000_0100, RCS=Increment(2)
+		let rco = Rco::from_byte(0b0000_0110);
+		assert_eq!(rco.qu, Qu::ShortPulse);
+		assert_eq!(rco.rcs, Rcs::Increment);
+		assert_eq!(rco.to_byte(), 0b0000_0110);
+	}
+
+	// ---- Set-point commands: nva/sva are signed ----
+
+	#[test]
+	fn c_se_na_1_negative_setpoint_round_trip() {
+		// nva = -1000 (LE: 0x18 0xFC), qos = QL=2, S/E=Execute -> 0x02
+		let bytes = [0x18, 0xFC, 0x02];
+		let parsed = CSeNa1::from_bytes(&bytes).unwrap();
+		assert_eq!(parsed.nva, -1000);
+		assert_eq!(parsed.qos.ql, 2);
+		assert_eq!(parsed.qos.se, SelectExecute::Execute);
+		let mut out = Vec::new();
+		parsed.to_bytes(&mut out).unwrap();
+		assert_eq!(out, bytes);
+	}
+
+	#[test]
+	fn c_se_nb_1_negative_scaled_round_trip() {
+		// sva = -32000 (LE: 0x00 0x83), qos = QL=0, S/E=Select -> 0x80
+		let bytes = [0x00, 0x83, 0x80];
+		let parsed = CSeNb1::from_bytes(&bytes).unwrap();
+		assert_eq!(parsed.sva, -32000);
+		assert_eq!(parsed.qos.se, SelectExecute::Select);
+		let mut out = Vec::new();
+		parsed.to_bytes(&mut out).unwrap();
+		assert_eq!(out, bytes);
 	}
 }

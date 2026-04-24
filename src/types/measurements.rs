@@ -4,7 +4,7 @@ use tracing::instrument;
 use crate::types::{
 	FromBytes, NotEnoughBytes, ParseError, ParseTimeTag, SizedSlice, ToBytes,
 	information_elements::*,
-	quality_descriptors::{Qdp, Qds},
+	quality_descriptors::{Qdp, Qds, SeqQd},
 	time::{Cp16Time2a, Cp24Time2a, Cp56Time2a},
 };
 
@@ -196,7 +196,7 @@ impl ToBytes for MBoNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNa1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -204,7 +204,7 @@ pub struct MMeNa1 {
 impl FromBytes for MMeNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { nva, qds })
 	}
@@ -223,7 +223,7 @@ impl ToBytes for MMeNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTa1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -233,7 +233,7 @@ pub struct MMeTa1 {
 impl FromBytes for MMeTa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp24Time2a::from_bytes(
 			bytes.get(3..6).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -257,7 +257,7 @@ impl ToBytes for MMeTa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNb1 {
 	/// Scaled value
-	pub sva: u16,
+	pub sva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 }
@@ -265,7 +265,7 @@ pub struct MMeNb1 {
 impl FromBytes for MMeNb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		Ok(Self { sva, qds })
 	}
@@ -284,7 +284,7 @@ impl ToBytes for MMeNb1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTb1 {
 	/// Scaled value
-	pub sva: u16,
+	pub sva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -294,7 +294,7 @@ pub struct MMeTb1 {
 impl FromBytes for MMeTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp24Time2a::from_bytes(
 			bytes.get(3..6).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -376,20 +376,24 @@ impl ToBytes for MMeTc1 {
 }
 
 /// Integrated totals
+///
+/// Per IEC 60870-5-101 §7.2.6.9: 32-bit signed counter reading followed by a
+/// sequence-quality descriptor (SeqQd) carrying sequence number, `CY`, `CA`
+/// and `IV` bits.
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MItNa1 {
-	/// Binary counter reading
-	pub bcr: u32,
-	/// Quality descriptor
-	pub qds: Qds,
+	/// Binary counter reading (signed 32-bit integer)
+	pub bcr: i32,
+	/// Sequence-quality descriptor
+	pub sqd: SeqQd,
 }
 
 impl FromBytes for MItNa1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bcr = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
-		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
-		Ok(Self { bcr, qds })
+		let bcr = i32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let sqd = SeqQd::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
+		Ok(Self { bcr, sqd })
 	}
 }
 
@@ -397,7 +401,7 @@ impl ToBytes for MItNa1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
 		buffer.extend_from_slice(&self.bcr.to_le_bytes());
-		buffer.push(self.qds.to_byte());
+		buffer.push(self.sqd.to_byte());
 		Ok(())
 	}
 }
@@ -552,13 +556,13 @@ impl ToBytes for MPsNa1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeNd1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 }
 
 impl FromBytes for MMeNd1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		Ok(Self { nva })
 	}
 }
@@ -698,7 +702,7 @@ impl ToBytes for MBoTb1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTd1 {
 	/// Normalized value
-	pub nva: u16,
+	pub nva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -708,7 +712,7 @@ pub struct MMeTd1 {
 impl FromBytes for MMeTd1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let nva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let nva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -732,7 +736,7 @@ impl ToBytes for MMeTd1 {
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MMeTe1 {
 	/// Scaled value
-	pub sva: u16,
+	pub sva: i16,
 	/// Quality descriptor
 	pub qds: Qds,
 	/// Time tag
@@ -742,7 +746,7 @@ pub struct MMeTe1 {
 impl FromBytes for MMeTe1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let sva = u16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
+		let sva = i16::from_le_bytes(*bytes.first_chunk::<2>().context(NotEnoughBytes)?);
 		let qds = Qds::from_byte(*bytes.get(2).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(3..10).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
@@ -796,12 +800,15 @@ impl ToBytes for MMeTf1 {
 	}
 }
 /// Integrated totals with CP56Time2a time tag
+///
+/// Per IEC 60870-5-101 §7.2.6.9, same as [`MItNa1`] plus a 7-byte CP56Time2a
+/// tag.
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct MItTb1 {
-	/// Binary counter reading
-	pub bcr: u32,
-	/// Quality descriptor
-	pub qds: Qds,
+	/// Binary counter reading (signed 32-bit integer)
+	pub bcr: i32,
+	/// Sequence-quality descriptor
+	pub sqd: SeqQd,
 	/// Time tag
 	pub time: Cp56Time2a,
 }
@@ -809,21 +816,21 @@ pub struct MItTb1 {
 impl FromBytes for MItTb1 {
 	#[instrument]
 	fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
-		let bcr = u32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
-		let qds = Qds::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
+		let bcr = i32::from_le_bytes(*bytes.first_chunk::<4>().context(NotEnoughBytes)?);
+		let sqd = SeqQd::from_byte(*bytes.get(4).context(NotEnoughBytes)?);
 		let time = Cp56Time2a::from_bytes(
 			bytes.get(5..12).context(NotEnoughBytes)?.try_into().context(SizedSlice)?,
 		)
 		.context(ParseTimeTag)?;
-		Ok(Self { bcr, qds, time })
+		Ok(Self { bcr, sqd, time })
 	}
 }
 
 impl ToBytes for MItTb1 {
 	#[instrument]
 	fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), ParseError> {
-		buffer.extend_from_slice(&self.bcr.to_be_bytes());
-		buffer.push(self.qds.to_byte());
+		buffer.extend_from_slice(&self.bcr.to_le_bytes());
+		buffer.push(self.sqd.to_byte());
 		buffer.extend_from_slice(&self.time.to_bytes());
 		Ok(())
 	}
@@ -976,5 +983,99 @@ impl ToBytes for MEiNa1 {
 		byte |= self.coi.to_byte();
 		buffer.push(byte);
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn round_trip<T: FromBytes + ToBytes + PartialEq + std::fmt::Debug>(bytes: &[u8]) -> T {
+		let parsed = T::from_bytes(bytes).expect("parse");
+		let mut out = Vec::new();
+		parsed.to_bytes(&mut out).expect("serialize");
+		assert_eq!(out, bytes, "wire bytes must match after round-trip");
+		parsed
+	}
+
+	// ---- BCR (M_IT_NA_1 / M_IT_TB_1) ----
+
+	#[test]
+	fn m_it_na_1_negative_counter_round_trip() {
+		// bcr = -1 (0xFFFF_FFFF LE), sqd = IV+CY+seq=5  -> 0b1010_0101 = 0xA5
+		let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xA5];
+		let v: MItNa1 = round_trip(&bytes);
+		assert_eq!(v.bcr, -1);
+		assert_eq!(v.sqd.seq, 5);
+		assert!(v.sqd.iv);
+		assert!(v.sqd.cy);
+		assert!(!v.sqd.ca);
+	}
+
+	#[test]
+	fn m_it_na_1_max_signed_counter() {
+		let bytes = [0xFF, 0xFF, 0xFF, 0x7F, 0x00];
+		let v: MItNa1 = round_trip(&bytes);
+		assert_eq!(v.bcr, i32::MAX);
+	}
+
+	#[test]
+	fn m_it_na_1_min_signed_counter() {
+		let bytes = [0x00, 0x00, 0x00, 0x80, 0x00];
+		let v: MItNa1 = round_trip(&bytes);
+		assert_eq!(v.bcr, i32::MIN);
+	}
+
+	#[test]
+	fn m_it_tb_1_serializes_little_endian() {
+		// Pre-fix this would have been big-endian on serialize.
+		let v = MItTb1 { bcr: 0x1234_5678, sqd: SeqQd::default(), time: Cp56Time2a::default() };
+		let mut out = Vec::new();
+		v.to_bytes(&mut out).unwrap();
+		assert_eq!(&out[0..4], &[0x78, 0x56, 0x34, 0x12], "BCR must be little-endian");
+	}
+
+	#[test]
+	fn m_it_tb_1_round_trip() {
+		// counter 0x0102_0304, sqd seq=10, time = all zeros
+		let bytes = [0x04, 0x03, 0x02, 0x01, 0x0A, 0, 0, 0, 0, 0, 0, 0];
+		let v: MItTb1 = round_trip(&bytes);
+		assert_eq!(v.bcr, 0x0102_0304);
+		assert_eq!(v.sqd.seq, 10);
+	}
+
+	// ---- NVA (signed normalized) ----
+
+	#[test]
+	fn m_me_na_1_negative_normalized() {
+		// nva = -32768 (0x8000 LE = 0x00 0x80), qds = 0
+		let bytes = [0x00, 0x80, 0x00];
+		let v: MMeNa1 = round_trip(&bytes);
+		assert_eq!(v.nva, i16::MIN);
+	}
+
+	#[test]
+	fn m_me_na_1_max_normalized() {
+		let bytes = [0xFF, 0x7F, 0x00];
+		let v: MMeNa1 = round_trip(&bytes);
+		assert_eq!(v.nva, i16::MAX);
+	}
+
+	// ---- SVA (signed scaled) ----
+
+	#[test]
+	fn m_me_nb_1_negative_scaled() {
+		let bytes = [0x9C, 0xFF, 0x00]; // -100 LE = 0xFF9C
+		let v: MMeNb1 = round_trip(&bytes);
+		assert_eq!(v.sva, -100);
+	}
+
+	#[test]
+	fn m_me_nb_1_round_trip_with_quality() {
+		// sva = 1234, qds = IV (0x80)
+		let bytes = [0xD2, 0x04, 0x80];
+		let v: MMeNb1 = round_trip(&bytes);
+		assert_eq!(v.sva, 1234);
+		assert!(v.qds.iv);
 	}
 }
