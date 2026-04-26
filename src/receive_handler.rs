@@ -19,8 +19,7 @@ use tokio::{
 use tracing::instrument;
 
 use crate::{
-	Connection, START_DT_CON_FRAME, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME, TEST_FR_ACT_FRAME,
-	TEST_FR_CON_FRAME,
+	Connection, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME, TEST_FR_ACT_FRAME, TEST_FR_CON_FRAME,
 	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAM_HEADER, UFrame},
 	asdu::Asdu,
 	config::ProtocolConfig,
@@ -456,32 +455,53 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 	#[instrument(level = "debug", skip_all)]
 	async fn handle_receive_u_frame(&mut self, u: &UFrame) -> Result<bool, Error> {
 		tracing::debug!("Received U frame: {u:?}");
-		if u.test_fr_activation {
-			send_frame(&mut self.write_connection, &TEST_FR_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-		} else if u.start_dt_activation {
-			tracing::debug!("StartDT activation");
-			//TODO: We already stated. We shouldn't be receiving this frame
-			//TODO: What else should we do here?
-			send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-		} else if u.stop_dt_activation {
-			send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
-				.await
-				.whatever_context("Error sending test frame")?;
-			return Ok(true);
-		} else if u.stop_dt_confirmation {
-			tracing::debug!("StopDT confirmation");
-			return Ok(true);
-		} else {
-			//This is a confirmation frame. Lets unset the t1_u timer
-			self.outstanding_test_fr_con_messages = 0;
-			self.t1_u.as_mut().reset(Instant::now() + *TIMER_UNSET);
+		// Match exactly one flag — per IEC 60870-5-104 §5.3 a U-frame
+		// carries exactly one of these six commands. Treating any
+		// non-matched variant as TestFR-CON (the previous behavior)
+		// silently cleared the t1_u timer on stray frames.
+		match (
+			u.test_fr_activation,
+			u.test_fr_confirmation,
+			u.start_dt_activation,
+			u.start_dt_confirmation,
+			u.stop_dt_activation,
+			u.stop_dt_confirmation,
+		) {
+			(true, false, false, false, false, false) => {
+				send_frame(&mut self.write_connection, &TEST_FR_CON_FRAME)
+					.await
+					.whatever_context("Error sending testFR confirmation")?;
+				Ok(false)
+			}
+			(false, true, false, false, false, false) => {
+				// Valid TestFR-CON: clear the t1_u timer.
+				self.outstanding_test_fr_con_messages = 0;
+				self.t1_u.as_mut().reset(Instant::now() + *TIMER_UNSET);
+				Ok(false)
+			}
+			(false, false, true, false, false, false) => {
+				// In-session StartDT-ACT is a protocol error per §5.3:
+				// data transfer is already started, so re-confirming would
+				// mask a peer fault. Close the connection instead.
+				whatever!("Received StartDT activation while data transfer is already started")
+			}
+			(false, false, false, true, false, false) => {
+				// StartDT-CON arriving outside `send_start_dt` is unexpected
+				// for an established session.
+				whatever!("Received unsolicited StartDT confirmation")
+			}
+			(false, false, false, false, true, false) => {
+				send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
+					.await
+					.whatever_context("Error sending stopDT confirmation")?;
+				Ok(true)
+			}
+			(false, false, false, false, false, true) => {
+				tracing::debug!("StopDT confirmation");
+				Ok(true)
+			}
+			_ => whatever!("Invalid U-frame: zero or multiple flags set: {u:?}"),
 		}
-
-		Ok(false)
 	}
 
 	#[instrument(level = "debug", skip_all)]

@@ -234,13 +234,12 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 		.whatever_context("Timeout waiting for startDT activation")?;
 
 		let apdu = apdu.whatever_context("Error receiving APDU")?;
-		if let Frame::U(u) = apdu.frame
-			&& !u.start_dt_confirmation
-		{
-			whatever!("StartDT activation not confirmed");
-			//TODO: Do I need to check the rest?
+		// Per IEC 60870-5-104 §5.3, only a U-frame with the
+		// startDT-confirmation flag set is a valid response. I/S frames
+		// or any other U-frame variant is a protocol violation.
+		match apdu.frame {
+			Frame::U(u) if u.start_dt_confirmation => Ok(()),
+			frame => whatever!("StartDT activation not confirmed; received {frame:?}"),
 		}
-
-		Ok(())
 	}
 }

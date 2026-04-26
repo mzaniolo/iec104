@@ -231,11 +231,11 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 		self.send_asdu(Asdu {
 			type_id,
 			information_objects,
-			originator_address: 0,
+			originator_address: self.config.protocol.originator_address,
 			address_field: common_address,
 			sequence: false,
 			test: false,
-			cot: Cot::Request,
+			cot: Cot::Activation,
 			negative: false,
 		})
 		.await
@@ -275,11 +275,11 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 		self.send_asdu(Asdu {
 			type_id,
 			information_objects,
-			originator_address: 0,
+			originator_address: self.config.protocol.originator_address,
 			address_field: common_address,
 			sequence: false,
 			test: false,
-			cot: Cot::Request,
+			cot: Cot::Activation,
 			negative: false,
 		})
 		.await
@@ -319,11 +319,11 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 		self.send_asdu(Asdu {
 			type_id,
 			information_objects,
-			originator_address: 0,
+			originator_address: self.config.protocol.originator_address,
 			address_field: common_address,
 			sequence: false,
 			test: false,
-			cot: Cot::Request,
+			cot: Cot::Activation,
 			negative: false,
 		})
 		.await
@@ -356,11 +356,11 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 		self.send_asdu(Asdu {
 			type_id,
 			information_objects,
-			originator_address: 0,
+			originator_address: self.config.protocol.originator_address,
 			address_field: common_address,
 			sequence: false,
 			test: false,
-			cot: Cot::Request,
+			cot: Cot::Activation,
 			negative: false,
 		})
 		.await

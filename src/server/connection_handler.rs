@@ -11,8 +11,10 @@ use tokio::{
 };
 
 use super::ConnectionId;
+use snafu::whatever;
+
 use crate::{
-	Connection, START_DT_CON_FRAME,
+	Connection, START_DT_CON_FRAME, TEST_FR_CON_FRAME,
 	apdu::Frame,
 	asdu::Asdu,
 	config::ServerConfig,
@@ -116,15 +118,30 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 					.whatever_context("Timeout waiting for startDT activation")?
 					.whatever_context("Error receiving APDU")?;
 
-					// TODO: How to detect a stuck client and terminated the connection?
-					if let Frame::U(u) = apdu.frame
-						&& u.start_dt_activation
-					{
-						send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
-							.await
-							.whatever_context("Error sending startDT confirmation")?;
-						self.state
-							.store(ConnectionState::Started, std::sync::atomic::Ordering::Relaxed);
+					// Per IEC 60870-5-104 §5.3, before data transfer begins only
+					// U-frames are valid. StartDT-ACT advances to the started
+					// state; TestFR-ACT must always be answered with TestFR-CON
+					// regardless of state. Anything else is a protocol violation
+					// and closes the connection.
+					match apdu.frame {
+						Frame::U(u) if u.start_dt_activation => {
+							send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
+								.await
+								.whatever_context("Error sending startDT confirmation")?;
+							self.state.store(
+								ConnectionState::Started,
+								std::sync::atomic::Ordering::Relaxed,
+							);
+						}
+						Frame::U(u) if u.test_fr_activation => {
+							send_frame(&mut self.write_connection, &TEST_FR_CON_FRAME)
+								.await
+								.whatever_context("Error sending testFR confirmation")?;
+						}
+						_ => whatever!(
+							"Unexpected frame while waiting for startDT activation: {:?}",
+							apdu.frame
+						),
 					}
 				}
 				ConnectionState::Started => {
