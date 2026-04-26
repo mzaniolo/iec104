@@ -85,7 +85,15 @@ impl Frame {
 		buffer.push(TELEGRAM_HEADER);
 		buffer.push(0); // length placeholder
 		self.to_bytes(&mut buffer)?;
-		buffer[1] = (buffer.len() - 2) as u8; // update length
+		// Per IEC 60870-5-104 §5.1 the length octet is one byte and the
+		// APDU payload must not exceed 253 bytes. Pre-fix `as u8`
+		// silently truncated, so an oversize ASDU went on the wire with
+		// a wrapped length field.
+		let payload_len = buffer.len() - 2;
+		if payload_len > APUD_MAX_LENGTH as usize {
+			return error::InvalidLength.fail();
+		}
+		buffer[1] = payload_len as u8;
 		Ok(buffer)
 	}
 }
@@ -392,5 +400,41 @@ mod tests {
 		assert_eq!(apdu.length, 4);
 
 		Ok(())
+	}
+
+	#[test]
+	fn to_apdu_bytes_rejects_oversize_payload() {
+		use crate::{
+			asdu::Asdu,
+			types::{GenericObject, MMeNc1},
+		};
+
+		// Build an I-frame whose ASDU exceeds the 253-byte payload
+		// limit. Each `M_ME_NC_1` is 5 bytes of payload + 3 bytes of IOA,
+		// non-sequence — 32 objects = 256 bytes of information objects,
+		// plus the 6-byte ASDU header = 262 bytes, well over 253.
+		let objects: Vec<GenericObject<MMeNc1>> = (0_u32..32)
+			.map(|i| GenericObject { address: i, object: MMeNc1::default() })
+			.collect();
+		let asdu = Asdu {
+			type_id: TypeId::M_ME_NC_1,
+			cot: Cot::SpontaneousData,
+			originator_address: 0,
+			address_field: 1,
+			sequence: false,
+			test: false,
+			negative: false,
+			information_objects: InformationObjects::MMeNc1(objects),
+		};
+		let frame = Frame::I(IFrame {
+			send_sequence_number: 0,
+			receive_sequence_number: 0,
+			asdu,
+		});
+
+		// Pre-fix: `as u8` silently truncated, producing a corrupt
+		// length octet. Post-fix: must surface as InvalidLength.
+		let err = frame.to_apdu_bytes().expect_err("must reject oversize APDU");
+		assert!(matches!(err, Error::InvalidLength { .. }), "got: {err:?}");
 	}
 }

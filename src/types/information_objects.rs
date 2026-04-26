@@ -81,12 +81,18 @@ macro_rules! define_information_objects {
 					objs.extend(other_objs);
 					Ok::<_, ParseError>(objs)
 				} else {
-					Ok(bytes[0..]
-						.chunks(object_size + 3)
+					// `chunks_exact` rejects a short trailing chunk; pre-fix
+					// `chunks` would yield it and panic on `chunk[2]`. The
+					// remainder must be empty for a well-formed ASDU.
+					let chunks = bytes.chunks_exact(object_size + ADDRESS_SIZE);
+					if !chunks.remainder().is_empty() {
+						return NotEnoughBytes.fail();
+					}
+					Ok(chunks
 						.map(|chunk| {
 							tracing::trace!("Building object: {:?}", chunk);
 							let address = u32::from_be_bytes([0, chunk[2], chunk[1], chunk[0]]);
-							let object = T::from_bytes(&chunk[3..])?;
+							let object = T::from_bytes(&chunk[ADDRESS_SIZE..])?;
 							Ok(GenericObject { address, object })
 						})
 						.collect::<Result<Vec<_>, ParseError>>()?)
@@ -233,4 +239,29 @@ define_information_objects! {
 	P_ME_NB_1 => PMeNb1(PMeNb1) ;
 	P_ME_NC_1 => PMeNc1(PMeNc1) ;
 	P_AC_NA_1 => PAcNa1(PAcNa1) ;
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn from_bytes_non_sequence_rejects_short_trailing_chunk() {
+		// `from_bytes` is `pub` and may be called outside `Asdu::parse`'s
+		// pre-validation. Passing a M_SP_NA_1 (1-byte payload, IOA = 3
+		// bytes → chunk size 4) tail with 5 bytes used to surface a
+		// panic via `chunks` indexing the short trailing chunk.
+		let bytes = [0x10, 0x00, 0x00, 0x00, 0xFF];
+		let err = InformationObjects::from_bytes(TypeId::M_SP_NA_1, false, 1, &bytes)
+			.expect_err("must reject malformed tail");
+		assert!(matches!(err, ParseError::NotEnoughBytes { .. }), "got: {err:?}");
+	}
+
+	#[test]
+	fn from_bytes_non_sequence_with_zero_tail_yields_empty() {
+		// Empty tail with num_objs=0 is well-formed (no objects).
+		let parsed = InformationObjects::from_bytes(TypeId::M_SP_NA_1, false, 0, &[])
+			.expect("empty tail should parse");
+		assert_eq!(parsed.len(), 0);
+	}
 }
