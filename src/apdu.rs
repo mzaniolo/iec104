@@ -413,9 +413,8 @@ mod tests {
 		// limit. Each `M_ME_NC_1` is 5 bytes of payload + 3 bytes of IOA,
 		// non-sequence — 32 objects = 256 bytes of information objects,
 		// plus the 6-byte ASDU header = 262 bytes, well over 253.
-		let objects: Vec<GenericObject<MMeNc1>> = (0_u32..32)
-			.map(|i| GenericObject { address: i, object: MMeNc1::default() })
-			.collect();
+		let objects: Vec<GenericObject<MMeNc1>> =
+			(0_u32..32).map(|i| GenericObject { address: i, object: MMeNc1::default() }).collect();
 		let asdu = Asdu {
 			type_id: TypeId::M_ME_NC_1,
 			cot: Cot::SpontaneousData,
@@ -426,11 +425,7 @@ mod tests {
 			negative: false,
 			information_objects: InformationObjects::MMeNc1(objects),
 		};
-		let frame = Frame::I(IFrame {
-			send_sequence_number: 0,
-			receive_sequence_number: 0,
-			asdu,
-		});
+		let frame = Frame::I(IFrame { send_sequence_number: 0, receive_sequence_number: 0, asdu });
 
 		// Pre-fix: `as u8` silently truncated, producing a corrupt
 		// length octet. Post-fix: must surface as InvalidLength.

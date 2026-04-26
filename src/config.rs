@@ -49,6 +49,41 @@ impl ProtocolConfig {
 	pub fn max_pending_outgoing_asdu_limit(&self) -> Option<usize> {
 		(self.max_pending_outgoing_asdu != 0).then_some(self.max_pending_outgoing_asdu as usize)
 	}
+
+	/// Verify the inter-parameter constraints from IEC 60870-5-104 §5.2.
+	///
+	/// Currently checks `w ≤ ⌊2k/3⌋` (the spec recommends acknowledging
+	/// at most after `2k/3` received I-frames so the peer never has to
+	/// wait at the `k` window boundary). Both `k` and `w` must also be
+	/// non-zero — a zero window stalls the link.
+	pub fn validate(&self) -> Result<(), ConfigError> {
+		if self.k == 0 {
+			return KZeroError.fail();
+		}
+		if self.w == 0 {
+			return WZeroError.fail();
+		}
+		// Use integer math: w must not exceed 2k/3.
+		let max_w = (u32::from(self.k) * 2) / 3;
+		if u32::from(self.w) > max_w {
+			return WExceedsLimitError { k: self.k, w: self.w, max_w: max_w as u16 }.fail();
+		}
+		Ok(())
+	}
+}
+
+/// Validation errors for [`ProtocolConfig`].
+#[derive(Debug, snafu::Snafu)]
+#[snafu(visibility(pub), context(suffix(Error)))]
+pub enum ConfigError {
+	#[snafu(display("Protocol k must be > 0"))]
+	KZero,
+	#[snafu(display("Protocol w must be > 0"))]
+	WZero,
+	#[snafu(display(
+		"Protocol w ({w}) exceeds spec-mandated upper bound ⌊2k/3⌋ = {max_w} for k = {k}"
+	))]
+	WExceedsLimit { k: u16, w: u16, max_w: u16 },
 }
 
 /// The client TLS configuration
@@ -118,7 +153,8 @@ impl Default for ProtocolConfig {
 		Self {
 			t3: Duration::from_secs(20),
 			t2: Duration::from_secs(10),
-			t1: Duration::from_secs(12),
+			// IEC 60870-5-104 §5.2 default; was 12 s (non-conformant).
+			t1: Duration::from_secs(15),
 			t0: Duration::from_secs(10),
 			k: 12,
 			w: 8,
@@ -160,4 +196,48 @@ const fn default_max_pending_outgoing_asdu() -> u32 {
 
 const fn default_duration<const N: u64>() -> Duration {
 	Duration::from_secs(N)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn default_t1_matches_iec_104_spec() {
+		// IEC 60870-5-104 §5.2 default for t1 is 15 s.
+		assert_eq!(ProtocolConfig::default().t1, Duration::from_secs(15));
+	}
+
+	#[test]
+	fn default_protocol_config_is_valid() {
+		// Sanity: shipping defaults must satisfy the validator.
+		ProtocolConfig::default().validate().expect("default config must validate");
+	}
+
+	#[test]
+	fn validate_accepts_w_at_two_thirds_k() {
+		// k=12 → max_w = 2*12/3 = 8 (the default).
+		let cfg = ProtocolConfig { k: 12, w: 8, ..ProtocolConfig::default() };
+		cfg.validate().expect("w == 2k/3 is allowed");
+	}
+
+	#[test]
+	fn validate_rejects_w_above_two_thirds_k() {
+		// k=12 → max_w = 8; w=9 violates the spec recommendation.
+		let cfg = ProtocolConfig { k: 12, w: 9, ..ProtocolConfig::default() };
+		let err = cfg.validate().expect_err("w > 2k/3 must be rejected");
+		assert!(matches!(err, ConfigError::WExceedsLimit { .. }), "got: {err:?}");
+	}
+
+	#[test]
+	fn validate_rejects_zero_k() {
+		let cfg = ProtocolConfig { k: 0, w: 0, ..ProtocolConfig::default() };
+		assert!(matches!(cfg.validate(), Err(ConfigError::KZero)));
+	}
+
+	#[test]
+	fn validate_rejects_zero_w() {
+		let cfg = ProtocolConfig { k: 12, w: 0, ..ProtocolConfig::default() };
+		assert!(matches!(cfg.validate(), Err(ConfigError::WZero)));
+	}
 }

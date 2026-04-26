@@ -1,4 +1,3 @@
-//! Shared helpers for RTU server integration tests.
 #![allow(
 	missing_docs,
 	missing_debug_implementations,
@@ -7,6 +6,10 @@
 	clippy::missing_const_for_fn
 )]
 
+mod integration;
+mod protocol;
+
+/// Shared helpers for RTU server integration tests.
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;

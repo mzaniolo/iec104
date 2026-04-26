@@ -2,8 +2,6 @@
 //! [`iec104::rtu_server::start_rtu_server_ephemeral`]).
 #![allow(clippy::expect_used)]
 
-mod support;
-
 use std::sync::Arc;
 
 use iec104::{
@@ -21,7 +19,8 @@ use iec104::{
 	},
 	types_id::TypeId,
 };
-use support::{
+
+use super::{
 	WAIT, c_ci_activation, c_cs_activation, c_ic_activation, c_rp_activation, c_sc_execute_on,
 	drain_until_m_ei, m_sp_off, recv_until, spawn_rtu_and_client,
 };

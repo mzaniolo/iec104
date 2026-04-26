@@ -105,6 +105,10 @@ impl<C: ClientCallback + Send + Sync + 'static> Client<C> {
 
 	#[instrument(level = "debug")]
 	pub async fn connect(&mut self) -> Result<(), Error> {
+		// Reject spec-violating k/w combinations (IEC 60870-5-104 §5.2)
+		// before opening the TCP connection so misconfiguration fails fast.
+		self.config.protocol.validate().whatever_context("Invalid protocol configuration")?;
+
 		if self.receive_task.is_some() {
 			whatever!("Receive task already running");
 		}

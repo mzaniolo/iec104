@@ -154,6 +154,10 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 		callback: Arc<C>,
 		rx: mpsc::Receiver<ServerCommand>,
 	) -> Result<Self, Error> {
+		// Reject spec-violating k/w combinations (IEC 60870-5-104 §5.2)
+		// before binding the socket so misconfiguration fails fast.
+		config.protocol.validate().whatever_context("Invalid protocol configuration")?;
+
 		let bind_addr = format!("{}:{}", config.address, config.port);
 		let listener = TcpListener::bind(&bind_addr)
 			.await

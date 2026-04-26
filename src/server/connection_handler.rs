@@ -4,15 +4,13 @@ use std::{
 };
 
 use atomic_enum::atomic_enum;
-use snafu::ResultExt as _;
+use snafu::{ResultExt as _, whatever};
 use tokio::{
 	io::{ReadHalf, WriteHalf},
 	sync::{mpsc, oneshot},
 };
 
 use super::ConnectionId;
-use snafu::whatever;
-
 use crate::{
 	Connection, START_DT_CON_FRAME, TEST_FR_CON_FRAME,
 	apdu::Frame,

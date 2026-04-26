@@ -54,9 +54,7 @@ impl Asdu {
 			// `remaining_bytes_size - 3` which underflows on a malformed
 			// short ASDU.
 			let expected = if sequence {
-				(num_objs as usize)
-					.checked_mul(object_size)
-					.and_then(|n| n.checked_add(3))
+				(num_objs as usize).checked_mul(object_size).and_then(|n| n.checked_add(3))
 			} else {
 				(num_objs as usize).checked_mul(object_size.saturating_add(3))
 			};
