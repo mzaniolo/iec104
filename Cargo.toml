@@ -20,8 +20,7 @@ keywords = [
 
 [features]
 chrono = ["dep:chrono"]
-
-default = ["chrono"]
+time = ["dep:time"]
 
 [dependencies]
 async-trait = "0.1.88"
@@ -32,7 +31,7 @@ humantime-serde = "1.1.1"
 lazy_static = "1.5.0"
 serde = { version = "1.0.219", features = ["derive"] }
 snafu = "0.8.6"
-time = { version = "0.3.41", features = ["local-offset"] }
+time = { version = "0.3.41", optional = true }
 tokio = { version = "1.47.0", features = [
     "macros",
     "rt-multi-thread",
