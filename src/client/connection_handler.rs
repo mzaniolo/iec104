@@ -7,6 +7,7 @@ use tokio::{
 	net::TcpStream,
 	sync::mpsc,
 };
+#[cfg(feature = "native-tls")]
 use tokio_native_tls::{
 	TlsConnector,
 	native_tls::{Certificate, Identity},
@@ -162,7 +163,8 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 		.whatever_context("Connection timeout")?
 		.whatever_context("Error connecting")?;
 
-		Ok(if let Some(ref tls) = config.tls {
+		#[cfg(feature = "native-tls")]
+		return Ok(if let Some(ref tls) = config.tls {
 			let connector = Self::make_tls_connector(tls)?;
 			Connection::Tls(
 				connector
@@ -172,9 +174,18 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 			)
 		} else {
 			Connection::Tcp(stream)
-		})
+		});
+		#[cfg(not(feature = "native-tls"))]
+		if let Some(_) = config.tls {
+			snafu::whatever!(
+				"TLS features disabled! Recompile with \"native-tls\" feature on to enable them!"
+			);
+		} else {
+			Ok(Connection::Tcp(stream))
+		}
 	}
 
+	#[cfg(feature = "native-tls")]
 	#[instrument(level = "debug")]
 	fn make_tls_connector(tls: &TlsClientConfig) -> Result<TlsConnector, Error> {
 		let root_cert: Option<Certificate> = tls

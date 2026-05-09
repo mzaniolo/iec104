@@ -7,6 +7,7 @@ use tokio::{
 	io::{AsyncRead, AsyncWrite},
 	net::TcpStream,
 };
+#[cfg(feature = "native-tls")]
 use tokio_native_tls::TlsStream;
 
 use crate::apdu::{Frame, UFrame};
@@ -41,6 +42,7 @@ lazy_static! {
 #[derive(Debug)]
 enum Connection {
 	Tcp(TcpStream),
+	#[cfg(feature = "native-tls")]
 	Tls(TlsStream<TcpStream>),
 }
 
@@ -52,6 +54,7 @@ impl AsyncRead for Connection {
 	) -> std::task::Poll<std::io::Result<()>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
+			#[cfg(feature = "native-tls")]
 			Connection::Tls(stream) => Pin::new(stream).poll_read(cx, buf),
 		}
 	}
@@ -65,6 +68,7 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<usize, std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
+			#[cfg(feature = "native-tls")]
 			Connection::Tls(stream) => Pin::new(stream).poll_write(cx, buf),
 		}
 	}
@@ -75,6 +79,7 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<(), std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_flush(cx),
+			#[cfg(feature = "native-tls")]
 			Connection::Tls(stream) => Pin::new(stream).poll_flush(cx),
 		}
 	}
@@ -85,6 +90,7 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<(), std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
+			#[cfg(feature = "native-tls")]
 			Connection::Tls(stream) => Pin::new(stream).poll_shutdown(cx),
 		}
 	}
