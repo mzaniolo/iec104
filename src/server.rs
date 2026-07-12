@@ -13,7 +13,9 @@ use tokio::{
 	net::TcpListener,
 	sync::{mpsc, oneshot},
 };
-use tokio_native_tls::{TlsAcceptor, native_tls::Identity};
+
+#[cfg(any(feature = "native_tls", feature = "rustls"))]
+use crate::tls::TlsServerAcceptor;
 
 /// Identifies a connection so it can be removed from the list when it
 /// terminates.
@@ -92,7 +94,8 @@ struct InnerServer<C: ServerCallback + Send + Sync + 'static> {
 	config: ServerConfig,
 	connections: HashMap<ConnectionId, ConnectionHandler>,
 	rx: mpsc::Receiver<ServerCommand>,
-	acceptor: Option<TlsAcceptor>,
+	#[cfg(any(feature = "native_tls", feature = "rustls"))]
+	acceptor: Option<crate::tls::TlsAcceptor>,
 	listener: TcpListener,
 }
 
@@ -163,25 +166,25 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 			.await
 			.with_whatever_context(|_| format!("Unable to bind to address '{bind_addr}'"))?;
 
-		let acceptor = config
-			.tls
-			.as_ref()
-			.map(|tls| {
-				let identity = Identity::from_pkcs8(
-					std::fs::read(tls.server_certificate.clone())
-						.whatever_context::<_, Error>("Failed to read server certificate")?
-						.as_slice(),
-					std::fs::read(tls.server_key.clone())
-						.whatever_context::<_, Error>("Failed to read server key")?
-						.as_slice(),
-				)
-				.whatever_context("Error creating server TLS identity")?;
-				tokio_native_tls::native_tls::TlsAcceptor::new(identity)
-					.map(TlsAcceptor::from)
-					.whatever_context("Error crating TLS acceptor")
-			})
-			.transpose()?;
-		Ok(Self { callback, config, connections: HashMap::new(), rx, acceptor, listener })
+		#[cfg(not(any(feature = "native_tls", feature = "rustls")))]
+		if config.tls.is_some() {
+			whatever!("TLS support is disabled; enable the `native_tls` or `rustls` Cargo feature");
+		}
+
+		#[cfg(any(feature = "native_tls", feature = "rustls"))]
+		let acceptor = match &config.tls {
+			None => None,
+			Some(tls) => Some(crate::tls::build_server_acceptor(tls)?),
+		};
+		Ok(Self {
+			callback,
+			config,
+			connections: HashMap::new(),
+			rx,
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			acceptor,
+			listener,
+		})
 	}
 
 	fn listen_local_addr(&self) -> std::io::Result<SocketAddr> {
@@ -197,15 +200,24 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 				accept_result = self.listener.accept() => {
 					let (socket, address) =
 						accept_result.whatever_context("Error accepting a new connection")?;
-					let connection = if let Some(ref acceptor) = self.acceptor {
-						Connection::Tls(
-							acceptor
-								.accept(socket)
-								.await
-								.whatever_context("Error doing the TLS handshake")?,
-						)
-					} else {
-						Connection::Tcp(socket)
+					let connection = {
+						#[cfg(any(feature = "native_tls", feature = "rustls"))]
+						{
+							match &self.acceptor {
+								Some(acceptor) => Connection::Tls(Box::new(
+									acceptor
+										.clone()
+										.accept(socket)
+										.await
+										.whatever_context("Error doing the TLS handshake")?,
+								)),
+								None => Connection::Tcp(socket),
+							}
+						}
+						#[cfg(not(any(feature = "native_tls", feature = "rustls")))]
+						{
+							Connection::Tcp(socket)
+						}
 					};
 					// TODO: Do we want to accept or decline the connection based on the callback response?
 					self.callback.on_new_connection(address).await;

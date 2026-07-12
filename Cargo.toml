@@ -19,8 +19,16 @@ keywords = [
 ]
 
 [features]
+default = []
 chrono = ["dep:chrono"]
 time = ["dep:time"]
+native_tls = ["dep:tokio-native-tls"]
+rustls = [
+    "dep:tokio-rustls",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:rustls-native-certs",
+]
 
 [dependencies]
 async-trait = "0.1.88"
@@ -29,6 +37,14 @@ atomic_enum = "0.3.0"
 chrono = { version = "0.4", optional = true }
 humantime-serde = "1.1.1"
 lazy_static = "1.5.0"
+
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+rustls-native-certs = { version = "0.8", optional = true }
+rustls-pemfile = { version = "2", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 snafu = "0.8.6"
 time = { version = "0.3.41", optional = true }
@@ -40,8 +56,8 @@ tokio = { version = "1.47.0", features = [
     "net",
     "io-util",
 ] }
-
-tokio-native-tls = "0.3.1"
+tokio-native-tls = { version = "0.3.1", optional = true }
+tokio-rustls = { version = "0.26", optional = true }
 tracing = "0.1.41"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
