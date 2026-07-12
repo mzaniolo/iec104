@@ -7,17 +7,15 @@ use tokio::{
 	net::TcpStream,
 	sync::mpsc,
 };
-use tokio_native_tls::{
-	TlsConnector,
-	native_tls::{Certificate, Identity},
-};
 use tracing::instrument;
 
+#[cfg(any(feature = "native_tls", feature = "rustls"))]
+use crate::tls::TlsClientConnector;
 use crate::{
 	START_DT_ACT_FRAME,
 	apdu::Frame,
 	client::{ClientCallback, Connection, InnerClientCallback},
-	config::{ClientConfig, TlsClientConfig},
+	config::ClientConfig,
 	error::Error,
 	receive_handler::{ReceiveHandler, ReceiveHandlerCommand, receive_apdu, send_frame},
 };
@@ -162,61 +160,23 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 		.whatever_context("Connection timeout")?
 		.whatever_context("Error connecting")?;
 
-		Ok(if let Some(ref tls) = config.tls {
-			let connector = Self::make_tls_connector(tls)?;
-			Connection::Tls(
-				connector
-					.connect(&config.address, stream)
-					.await
-					.whatever_context("Error connecting")?,
-			)
-		} else {
-			Connection::Tcp(stream)
-		})
-	}
-
-	#[instrument(level = "debug")]
-	fn make_tls_connector(tls: &TlsClientConfig) -> Result<TlsConnector, Error> {
-		let root_cert: Option<Certificate> = tls
-			.server_certificate
-			.as_ref()
-			.map(std::fs::read)
-			.transpose()
-			.whatever_context("Failed to read server certificate")?
-			.map(|cert_data| Certificate::from_pem(cert_data.as_slice()))
-			.transpose()
-			.whatever_context("Invalid server certificate")?;
-
-		let identity: Option<Identity> = match (&tls.client_key, &tls.client_certificate) {
-			(Some(client_key), Some(client_cert)) => Some(
-				Identity::from_pkcs8(
-					std::fs::read(client_cert)
-						.whatever_context("Failed to read client certificate")?
-						.as_slice(),
-					std::fs::read(client_key)
-						.whatever_context("Failed to read client key")?
-						.as_slice(),
-				)
-				.whatever_context("Could not create client identity")?,
+		match &config.tls {
+			None => Ok(Connection::Tcp(stream)),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Some(tls) => {
+				let connector = crate::tls::build_client_connector(tls)?;
+				Ok(Connection::Tls(Box::new(
+					connector
+						.connect(&config.address, stream)
+						.await
+						.whatever_context("Error connecting")?,
+				)))
+			}
+			#[cfg(not(any(feature = "native_tls", feature = "rustls")))]
+			Some(_) => whatever!(
+				"TLS support is disabled; enable the `native_tls` or `rustls` Cargo feature"
 			),
-			(None, None) => None,
-			_ => whatever!("Both client key *and* certificate must be specified"),
-		};
-
-		let mut connector = tokio_native_tls::native_tls::TlsConnector::builder();
-
-		if let Some(root_cert) = root_cert {
-			connector.add_root_certificate(root_cert);
 		}
-
-		if let Some(identity) = identity {
-			connector.identity(identity);
-		}
-
-		connector.danger_accept_invalid_certs(tls.danger_disable_tls_verify);
-
-		let connector = connector.build().whatever_context("Error building TLS connector")?;
-		Ok(TlsConnector::from(connector))
 	}
 
 	#[instrument(level = "debug", skip_all)]

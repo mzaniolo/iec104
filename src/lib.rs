@@ -7,7 +7,6 @@ use tokio::{
 	io::{AsyncRead, AsyncWrite},
 	net::TcpStream,
 };
-use tokio_native_tls::TlsStream;
 
 use crate::apdu::{Frame, UFrame};
 
@@ -20,6 +19,7 @@ pub mod error;
 mod receive_handler;
 pub mod rtu_server;
 pub mod server;
+mod tls;
 pub mod types;
 pub mod types_id;
 
@@ -41,7 +41,8 @@ lazy_static! {
 #[derive(Debug)]
 enum Connection {
 	Tcp(TcpStream),
-	Tls(TlsStream<TcpStream>),
+	#[cfg(any(feature = "native_tls", feature = "rustls"))]
+	Tls(Box<tls::TlsStream>),
 }
 
 impl AsyncRead for Connection {
@@ -52,7 +53,8 @@ impl AsyncRead for Connection {
 	) -> std::task::Poll<std::io::Result<()>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_read(cx, buf),
-			Connection::Tls(stream) => Pin::new(stream).poll_read(cx, buf),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Connection::Tls(stream) => Pin::new(stream.as_mut()).poll_read(cx, buf),
 		}
 	}
 }
@@ -65,7 +67,8 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<usize, std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_write(cx, buf),
-			Connection::Tls(stream) => Pin::new(stream).poll_write(cx, buf),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Connection::Tls(stream) => Pin::new(stream.as_mut()).poll_write(cx, buf),
 		}
 	}
 
@@ -75,7 +78,8 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<(), std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_flush(cx),
-			Connection::Tls(stream) => Pin::new(stream).poll_flush(cx),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Connection::Tls(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
 		}
 	}
 
@@ -85,7 +89,8 @@ impl AsyncWrite for Connection {
 	) -> std::task::Poll<Result<(), std::io::Error>> {
 		match self.get_mut() {
 			Connection::Tcp(stream) => Pin::new(stream).poll_shutdown(cx),
-			Connection::Tls(stream) => Pin::new(stream).poll_shutdown(cx),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Connection::Tls(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
 		}
 	}
 }

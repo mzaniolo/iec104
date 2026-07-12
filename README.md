@@ -47,7 +47,20 @@ The RTU example is aligned with that client for general interrogation, clock syn
 
 | Feature | Default | Effect |
 | ------- | ------- | ------ |
-| `chrono` | **yes** | Conversions between IEC time tags ([`Cp24Time2a`](https://docs.rs/iec104/latest/iec104/types/time/struct.Cp24Time2a.html), [`Cp56Time2a`](https://docs.rs/iec104/latest/iec104/types/time/struct.Cp56Time2a.html)) and **chrono** `DateTime` (disable default features with `default-features = false` if you do not want the dependency). |
+| `chrono` | no | Conversions between IEC time tags ([`Cp24Time2a`](https://docs.rs/iec104/latest/iec104/types/time/struct.Cp24Time2a.html), [`Cp56Time2a`](https://docs.rs/iec104/latest/iec104/types/time/struct.Cp56Time2a.html)) and **chrono** `DateTime`. |
+| `time` | no | Conversions between IEC time tags and the **time** crate. |
+| `native_tls` | no | TLS via **tokio-native-tls** (OpenSSL/system TLS). Enable this to use [`TlsClientConfig`](https://docs.rs/iec104/latest/iec104/config/struct.TlsClientConfig.html) / [`TlsServerConfig`](https://docs.rs/iec104/latest/iec104/config/struct.TlsServerConfig.html). |
+| `rustls` | no | TLS via **tokio-rustls** (pure Rust, no OpenSSL). Mutually exclusive with `native_tls`. |
+
+By default the crate has **no TLS dependencies** and accepts plain TCP only. If `tls` is set in config without enabling a TLS feature, connection setup returns an error.
+
+**Breaking change (0.5+):** TLS is no longer enabled implicitly. Downstream crates that use TLS must opt in:
+
+```toml
+iec104 = { version = "0.5", features = ["native_tls"] }
+# or
+iec104 = { version = "0.5", features = ["rustls"] }
+```
 
 ## Requirements
 
@@ -59,7 +72,7 @@ The RTU example is aligned with that client for general interrogation, clock syn
 - **Work in progress:** public APIs and default RTU behavior may change between minor releases until the crate stabilises.
 - **Coverage:** not every standard type ID or edge case is implemented or battle-tested; prefer explicit tests for your IO list.
 - **Low-level `Server`:** does not implement an RTU process image—you get raw ASDUs and must send replies yourself.
-- **Security:** TLS is available for transport; application-layer security (authentication, authorisation) is outside IEC 104 and not provided here.
+- **Security:** TLS is available for transport when the `native_tls` or `rustls` feature is enabled; application-layer security (authentication, authorisation) is outside IEC 104 and not provided here.
 - **101 / serial:** out of scope.
 
 ## Contributing
