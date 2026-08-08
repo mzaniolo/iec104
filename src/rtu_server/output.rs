@@ -5,22 +5,31 @@ use std::collections::HashMap;
 
 use super::model::{PointAddress, PointValue};
 use crate::{
-	asdu::Asdu,
+	apdu::{APUD_MAX_LENGTH, CONTROL_FIELDS_SIZE},
+	asdu::{ASDU_HEADER_SIZE, Asdu, MAX_OBJECTS_PER_ASDU},
 	cot::Cot,
 	types::{
-		FromBytes, GenericObject, InformationObjects, MBoNa1, MBoTb1, MDpNa1, MDpTa1, MDpTb1,
-		MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1, MMeNb1,
-		MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1, MSpTa1,
-		MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes,
+		ADDRESS_SIZE, FromBytes, GenericObject, InformationObjects, MBoNa1, MBoTb1, MDpNa1, MDpTa1,
+		MDpTb1, MEiNa1, MEpTa1, MEpTb1, MEpTc1, MEpTd1, MEpTe1, MEpTf1, MItNa1, MItTb1, MMeNa1,
+		MMeNb1, MMeNc1, MMeNd1, MMeTa1, MMeTb1, MMeTc1, MMeTd1, MMeTe1, MMeTf1, MPsNa1, MSpNa1,
+		MSpTa1, MSpTb1, MStNa1, MStTa1, MStTb1, ToBytes,
 		commands::{Qoi, Rqt},
 	},
 	types_id::TypeId,
 };
 
-/// Maximum number of information objects per ASDU (7-bit count field).
-pub(super) const MAX_OBJECTS_PER_ASDU: usize = 127;
 /// Global common address for global interrogation.
 const GLOBAL_COMMON_ADDRESS: u16 = 0xFFFF;
+
+/// Max objects that fit in one non-sequence ASDU under the APDU length cap.
+#[must_use]
+fn max_objects_fitting_apdu(type_id: TypeId) -> usize {
+	let per_object = ADDRESS_SIZE + type_id.size();
+	let available = APUD_MAX_LENGTH as usize - CONTROL_FIELDS_SIZE - ASDU_HEADER_SIZE;
+	// Standard monitoring types always fit at least one object; guard `chunks(0)`.
+	let by_bytes = (available / per_object).max(1);
+	by_bytes.min(MAX_OBJECTS_PER_ASDU)
+}
 
 /// [`Cot`] for monitoring ASDUs answering `C_IC_NA_1` with this QOI (global or
 /// group 1–16). [`None`] for [`Qoi::Unused`], [`Qoi::Other`], etc.
@@ -90,7 +99,7 @@ fn sort_and_push_interrogation_chunks<T>(
 	InformationObjects: From<Vec<GenericObject<T>>>,
 {
 	objs.sort_by_key(|(ioa, _)| *ioa);
-	for chunk in objs.chunks(MAX_OBJECTS_PER_ASDU) {
+	for chunk in objs.chunks(max_objects_fitting_apdu(type_id)) {
 		let chunk_objs: Vec<_> = chunk
 			.iter()
 			.map(|(ioa, m)| GenericObject { address: *ioa, object: m.clone() })
@@ -371,11 +380,20 @@ pub(super) fn counter_interrogation_data(
 mod interrogation_qoi_tests {
 	use std::collections::HashMap;
 
-	use super::{interrogation_data_asdus, interrogation_data_cot};
+	use super::{interrogation_data_asdus, interrogation_data_cot, max_objects_fitting_apdu};
 	use crate::{
 		rtu_server::model::{PointAddress, PointValue},
 		types::{MMeNa1, commands::Qoi, quality_descriptors::Qds},
+		types_id::TypeId,
 	};
+
+	#[test]
+	fn max_objects_fitting_apdu_known_sizes() {
+		assert_eq!(max_objects_fitting_apdu(TypeId::M_ME_NA_1), 40);
+		assert_eq!(max_objects_fitting_apdu(TypeId::M_ME_NC_1), 30);
+		assert_eq!(max_objects_fitting_apdu(TypeId::M_SP_NA_1), 60);
+		assert_eq!(max_objects_fitting_apdu(TypeId::M_IT_NA_1), 30);
+	}
 
 	#[test]
 	fn cot_tracks_qoi() {
@@ -428,6 +446,42 @@ mod interrogation_qoi_tests {
 		let groups = HashMap::new();
 		assert!(interrogation_data_asdus(ca, &model, Qoi::Unused, &groups).is_empty());
 		assert!(interrogation_data_asdus(ca, &model, Qoi::Other(19), &groups).is_empty());
+	}
+
+	/// 50 non-sequence `M_ME_NA_1` objects exceed the 253-byte APDU payload
+	/// limit (~40 objects max). GI packing must split into multiple ASDUs so
+	/// each encodes successfully.
+	#[test]
+	fn interrogation_asdus_fit_within_apdu_max_length() {
+		use crate::apdu::{Frame, IFrame};
+
+		let ca = 1_u16;
+		let point_count = 50_u32;
+		let mut model = HashMap::new();
+		for ioa in 1..=point_count {
+			model.insert(
+				PointAddress::new(ca, ioa),
+				PointValue::MMeNa1(MMeNa1 { nva: ioa as i16, qds: Qds::default() }),
+			);
+		}
+		let groups = HashMap::new();
+
+		let asdus = interrogation_data_asdus(ca, &model, Qoi::Global, &groups);
+		let total_objects: usize = asdus.iter().map(|a| a.information_objects.len()).sum();
+		assert_eq!(total_objects, point_count as usize);
+		assert!(
+			asdus.len() > 1,
+			"50 M_ME_NA_1 points must be split across multiple ASDUs to fit APDU max length"
+		);
+
+		for asdu in &asdus {
+			let frame = Frame::I(IFrame {
+				send_sequence_number: 0,
+				receive_sequence_number: 0,
+				asdu: asdu.clone(),
+			});
+			frame.to_apdu_bytes().expect("each GI data ASDU must encode within APUD_MAX_LENGTH");
+		}
 	}
 }
 

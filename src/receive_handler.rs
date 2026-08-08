@@ -20,7 +20,10 @@ use tracing::instrument;
 
 use crate::{
 	Connection, STOP_DT_ACT_FRAME, STOP_DT_CON_FRAME, TEST_FR_ACT_FRAME, TEST_FR_CON_FRAME,
-	apdu::{APUD_MAX_LENGTH, Apdu, Frame, IFrame, SFrame, TELEGRAM_HEADER, UFrame},
+	apdu::{
+		APDU_HEADER_SIZE, APUD_MAX_LENGTH, Apdu, Frame, IFrame, MAX_APDU_FRAME_SIZE, SFrame,
+		TELEGRAM_HEADER, UFrame,
+	},
 	asdu::Asdu,
 	config::ProtocolConfig,
 	error::Error,
@@ -107,9 +110,12 @@ pub(crate) async fn send_frame<W: AsyncWrite + Unpin>(
 #[instrument(level = "debug", skip_all)]
 pub(crate) async fn receive_apdu<R: AsyncRead + Unpin>(
 	connection: &mut R,
-	buffer: &mut [u8; 255],
+	buffer: &mut [u8; MAX_APDU_FRAME_SIZE],
 ) -> Result<Apdu, Error> {
-	connection.read_exact(&mut buffer[0..2]).await.whatever_context("Error receiving data")?;
+	connection
+		.read_exact(&mut buffer[0..APDU_HEADER_SIZE])
+		.await
+		.whatever_context("Error receiving data")?;
 	if buffer[0] != TELEGRAM_HEADER {
 		whatever!("Invalid starter byte: {:02x}{:02x}", buffer[0], buffer[1]);
 	}
@@ -117,11 +123,12 @@ pub(crate) async fn receive_apdu<R: AsyncRead + Unpin>(
 	if length > APUD_MAX_LENGTH as usize {
 		whatever!("Invalid length: {}", length);
 	}
+	let frame_end = APDU_HEADER_SIZE + length;
 	connection
-		.read_exact(&mut buffer[2..length + 2])
+		.read_exact(&mut buffer[APDU_HEADER_SIZE..frame_end])
 		.await
 		.whatever_context("Error receiving data")?;
-	Apdu::from_bytes(&buffer[0..length + 2]).whatever_context("Error decoding APDU")
+	Apdu::from_bytes(&buffer[0..frame_end]).whatever_context("Error decoding APDU")
 }
 
 /// Reason enqueueing an ASDU was rejected by the receive-handler task.
@@ -210,8 +217,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		if *length > APUD_MAX_LENGTH {
 			whatever!("Invalid length: {length}");
 		}
-		if reading_buffer.len() >= (length + 2) as usize {
-			let apdu_bytes: Vec<u8> = reading_buffer.drain(0..(length + 2) as usize).collect();
+		if reading_buffer.len() >= APDU_HEADER_SIZE + usize::from(*length) {
+			let apdu_bytes: Vec<u8> =
+				reading_buffer.drain(0..APDU_HEADER_SIZE + usize::from(*length)).collect();
 			Apdu::from_bytes(&apdu_bytes).map(Some)
 		} else {
 			Ok(None)
@@ -223,7 +231,7 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 		self.t3.as_mut().reset(Instant::now() + self.config.t3);
 
 		let mut reading_buffer: VecDeque<u8> = VecDeque::with_capacity(512);
-		let mut buffer = [0; 255];
+		let mut buffer = [0; MAX_APDU_FRAME_SIZE];
 
 		loop {
 			select! {
@@ -235,7 +243,7 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 					reading_buffer.extend(buffer[0..len].iter());
 					let mut reset_t3 = false;
 
-					while reading_buffer.len() > 2 && let Some(apdu) = Self::try_parse_apdu(&mut reading_buffer).whatever_context("Error parsing APDU")? {
+					while reading_buffer.len() > APDU_HEADER_SIZE && let Some(apdu) = Self::try_parse_apdu(&mut reading_buffer).whatever_context("Error parsing APDU")? {
 						match apdu.frame {
 							Frame::I(i) => {
 								self.handle_receive_i_frame(&i)?;

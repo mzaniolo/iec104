@@ -13,7 +13,7 @@ use tracing::instrument;
 use crate::tls::TlsClientConnector;
 use crate::{
 	START_DT_ACT_FRAME,
-	apdu::Frame,
+	apdu::{Frame, MAX_APDU_FRAME_SIZE},
 	client::{ClientCallback, Connection, InnerClientCallback},
 	config::ClientConfig,
 	error::Error,
@@ -181,7 +181,7 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 
 	#[instrument(level = "debug", skip_all)]
 	pub async fn send_start_dt(&mut self) -> Result<(), Error> {
-		let mut buffer = [0; 255];
+		let mut buffer = [0; MAX_APDU_FRAME_SIZE];
 		send_frame(&mut self.write_connection, &START_DT_ACT_FRAME)
 			.await
 			.whatever_context("Error sending startDT activation")?;

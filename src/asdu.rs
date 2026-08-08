@@ -4,9 +4,14 @@ use tracing::instrument;
 use crate::{
 	cot::{Cot, CotError},
 	error::SpanTraceWrapper,
-	types::{InformationObjects, ParseError},
+	types::{ADDRESS_SIZE, InformationObjects, ParseError},
 	types_id::TypeId,
 };
+
+/// ASDU header: type id, VSQ, COT (2), originator address, common address (2).
+pub(crate) const ASDU_HEADER_SIZE: usize = 6;
+/// Maximum number of information objects per ASDU (7-bit VSQ count field).
+pub(crate) const MAX_OBJECTS_PER_ASDU: usize = 127;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Asdu {
@@ -42,21 +47,23 @@ impl Asdu {
 			*bytes.get(5).context(NotEnoughBytes)?,
 		]);
 
-		let remaining_bytes = bytes.get(6..).context(NotEnoughBytes)?;
+		let remaining_bytes = bytes.get(ASDU_HEADER_SIZE..).context(NotEnoughBytes)?;
 		if type_id.is_standard() {
 			let object_size = type_id.size();
 			let remaining_bytes_size = remaining_bytes.len();
 
 			// Validate the wire layout in one place using checked arithmetic.
-			// A sequence carries one 3-byte IOA followed by `num_objs` payloads
+			// A sequence carries one ADDRESS_SIZE IOA followed by `num_objs` payloads
 			// of `object_size` bytes each; a non-sequence is `num_objs` repeats
 			// of `(IOA + payload)`. Both pre-fix branches did
-			// `remaining_bytes_size - 3` which underflows on a malformed
+			// `remaining_bytes_size - ADDRESS_SIZE` which underflows on a malformed
 			// short ASDU.
 			let expected = if sequence {
-				(num_objs as usize).checked_mul(object_size).and_then(|n| n.checked_add(3))
+				(num_objs as usize)
+					.checked_mul(object_size)
+					.and_then(|n| n.checked_add(ADDRESS_SIZE))
 			} else {
-				(num_objs as usize).checked_mul(object_size.saturating_add(3))
+				(num_objs as usize).checked_mul(object_size.saturating_add(ADDRESS_SIZE))
 			};
 			if expected != Some(remaining_bytes_size) {
 				return NumberOfObjects {
@@ -86,7 +93,7 @@ impl Asdu {
 	pub fn to_bytes(&self, buffer: &mut Vec<u8>) -> Result<(), AsduError> {
 		buffer.push(self.type_id as u8);
 		let num_objs = self.information_objects.len();
-		if num_objs > 127 {
+		if num_objs > MAX_OBJECTS_PER_ASDU {
 			return TooManyObjects { num_objs }.fail();
 		}
 		let mut byte: u8 = num_objs as u8;
@@ -142,7 +149,10 @@ pub enum AsduError {
 		#[snafu(implicit)]
 		context: Box<SpanTraceWrapper>,
 	},
-	#[snafu(display("Too many objects. Max number of objects is 127, got {num_objs} objects."))]
+	#[snafu(display(
+		"Too many objects. Max number of objects is {}, got {num_objs} objects.",
+		MAX_OBJECTS_PER_ASDU
+	))]
 	TooManyObjects {
 		num_objs: usize,
 		#[snafu(implicit)]
@@ -163,25 +173,25 @@ mod tests {
 	/// Header common to all the malformed-tail tests below: type
 	/// `M_SP_NA_1` (size = 1 byte), 1 object, COT = SpontaneousData, OA = 0,
 	/// CA = 1.
-	const HEADER: [u8; 6] = [0x01, 0x01, 0x03, 0x00, 0x01, 0x00];
+	const HEADER: [u8; ASDU_HEADER_SIZE] = [0x01, 0x01, 0x03, 0x00, 0x01, 0x00];
 
 	#[test]
 	fn parse_sequence_with_short_tail_does_not_panic() {
 		// sequence=true means SQ bit set on byte 1 (0x80 | 0x01 = 0x81).
-		// A sequence ASDU needs at least 3 bytes (IOA) + N*size — give
-		// it only 2 bytes so the pre-fix `remaining_bytes_size - 3`
+		// A sequence ASDU needs at least ADDRESS_SIZE (IOA) + N*size — give
+		// it only 2 bytes so the pre-fix `remaining_bytes_size - ADDRESS_SIZE`
 		// would underflow.
 		let mut bytes = HEADER;
 		bytes[1] = 0x81;
 		let mut input = bytes.to_vec();
-		input.extend_from_slice(&[0x00, 0x00]); // 2-byte tail (< 3)
+		input.extend_from_slice(&[0x00, 0x00]); // 2-byte tail (< ADDRESS_SIZE)
 		let err = Asdu::parse(&input).expect_err("must reject short sequence ASDU");
 		assert!(matches!(err, AsduError::NumberOfObjects { .. }), "got: {err:?}");
 	}
 
 	#[test]
 	fn parse_sequence_with_zero_tail_does_not_panic() {
-		// Even tighter: zero tail bytes after the 6-byte ASDU header.
+		// Even tighter: zero tail bytes after the ASDU header.
 		let mut bytes = HEADER;
 		bytes[1] = 0x81;
 		let err = Asdu::parse(&bytes).expect_err("must reject empty sequence tail");
@@ -190,8 +200,8 @@ mod tests {
 
 	#[test]
 	fn parse_non_sequence_with_short_tail_rejected() {
-		// Non-sequence M_SP_NA_1 with num_objs=1 needs 4 bytes (3 IOA + 1
-		// payload). Provide only 3 bytes (just the IOA).
+		// Non-sequence M_SP_NA_1 with num_objs=1 needs ADDRESS_SIZE + 1
+		// payload bytes. Provide only ADDRESS_SIZE bytes (just the IOA).
 		let mut input = HEADER.to_vec();
 		input.extend_from_slice(&[0x10, 0x00, 0x00]);
 		let err = Asdu::parse(&input).expect_err("must reject short non-sequence ASDU");

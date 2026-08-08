@@ -13,7 +13,7 @@ use tokio::{
 use super::ConnectionId;
 use crate::{
 	Connection, START_DT_CON_FRAME, TEST_FR_CON_FRAME,
-	apdu::Frame,
+	apdu::{Frame, MAX_APDU_FRAME_SIZE},
 	asdu::Asdu,
 	config::ServerConfig,
 	error::Error,
@@ -102,7 +102,7 @@ impl ConnectionHandler {
 
 impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 	pub async fn start(mut self) -> Result<(), Error> {
-		let mut buffer = [0; 255];
+		let mut buffer = [0; MAX_APDU_FRAME_SIZE];
 		let out_buffer_full = Arc::new(AtomicBool::new(false));
 
 		loop {
