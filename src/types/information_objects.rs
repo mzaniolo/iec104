@@ -17,7 +17,8 @@ use super::{
 };
 use crate::types_id::TypeId;
 
-const ADDRESS_SIZE: usize = 3;
+/// Information object address (IOA) size on the wire.
+pub(crate) const ADDRESS_SIZE: usize = 3;
 
 macro_rules! define_information_objects {
 	(
@@ -41,11 +42,11 @@ macro_rules! define_information_objects {
 			) -> Result<Vec<GenericObject<T>>, ParseError> {
 				if !type_id.is_standard() {
 					tracing::trace!("Building RAW information objects. Bytes: {:?}", bytes);
-					if bytes.len() < 3 {
+					if bytes.len() < ADDRESS_SIZE {
 						return NotEnoughBytes.fail();
 					}
 					let address = u32::from_be_bytes([0, bytes[2], bytes[1], bytes[0]]);
-					let object = T::from_bytes(&bytes[3..])?;
+					let object = T::from_bytes(&bytes[ADDRESS_SIZE..])?;
 					return Ok(vec![GenericObject { address, object }]);
 				}
 				let object_size = type_id.size();
@@ -248,9 +249,9 @@ mod tests {
 	#[test]
 	fn from_bytes_non_sequence_rejects_short_trailing_chunk() {
 		// `from_bytes` is `pub` and may be called outside `Asdu::parse`'s
-		// pre-validation. Passing a M_SP_NA_1 (1-byte payload, IOA = 3
-		// bytes → chunk size 4) tail with 5 bytes used to surface a
-		// panic via `chunks` indexing the short trailing chunk.
+		// pre-validation. Passing a M_SP_NA_1 (1-byte payload + ADDRESS_SIZE
+		// IOA → chunk size ADDRESS_SIZE + 1) tail with 5 bytes used to
+		// surface a panic via `chunks` indexing the short trailing chunk.
 		let bytes = [0x10, 0x00, 0x00, 0x00, 0xFF];
 		let err = InformationObjects::from_bytes(TypeId::M_SP_NA_1, false, 1, &bytes)
 			.expect_err("must reject malformed tail");

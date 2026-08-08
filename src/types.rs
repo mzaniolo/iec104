@@ -89,4 +89,5 @@ pub struct GenericObject<T: FromBytes + ToBytes + Default> {
 
 mod information_objects;
 
+pub(crate) use information_objects::ADDRESS_SIZE;
 pub use information_objects::InformationObjects;

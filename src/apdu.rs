@@ -8,6 +8,12 @@ use crate::{
 
 pub(crate) const TELEGRAM_HEADER: u8 = 0x68;
 pub(crate) const APUD_MAX_LENGTH: u8 = 253;
+/// Start byte and length octet preceding the APDU payload.
+pub(crate) const APDU_HEADER_SIZE: usize = 2;
+/// Control field octets at the start of every APDU payload.
+pub(crate) const CONTROL_FIELDS_SIZE: usize = 4;
+/// Maximum on-wire APDU frame size (header + max payload).
+pub(crate) const MAX_APDU_FRAME_SIZE: usize = APDU_HEADER_SIZE + APUD_MAX_LENGTH as usize;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Apdu {
@@ -19,7 +25,7 @@ impl Apdu {
 	#[instrument]
 	pub fn from_bytes(data: &[u8]) -> Result<Self, Error> {
 		// Check if the data is long enough to contain the APDU header
-		if data.len() < 6 {
+		if data.len() < APDU_HEADER_SIZE + CONTROL_FIELDS_SIZE {
 			return error::ApduTooShort.fail();
 		}
 		if data[0] != TELEGRAM_HEADER {
@@ -32,20 +38,21 @@ impl Apdu {
 			return error::InvalidLength.fail();
 		}
 
-		let control_fields = data[2..6].try_into().context(SizedSlice)?;
-		let frame = if length == 4_u8 {
+		let asdu_start = APDU_HEADER_SIZE + CONTROL_FIELDS_SIZE;
+		let control_fields = data[APDU_HEADER_SIZE..asdu_start].try_into().context(SizedSlice)?;
+		let frame = if usize::from(length) == CONTROL_FIELDS_SIZE {
 			Frame::from_control_fields(control_fields)
 		} else {
-			Frame::from_asdu(control_fields, data.get(6..).context(NotEnoughBytes)?)
+			Frame::from_asdu(control_fields, data.get(asdu_start..).context(NotEnoughBytes)?)
 		}?;
 
 		Ok(Self { length, frame })
 	}
 
 	pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
-		// The total length of the APDU is the length of the frame plus 2 bytes, one for
-		// the header and one for the length
-		let mut bytes = Vec::with_capacity(self.length as usize + 2);
+		// The total length of the APDU is the length of the frame plus the start
+		// byte and the length octet
+		let mut bytes = Vec::with_capacity(self.length as usize + APDU_HEADER_SIZE);
 		bytes.push(TELEGRAM_HEADER);
 		bytes.push(self.length);
 		self.frame.to_bytes(&mut bytes)?;
@@ -61,7 +68,7 @@ pub enum Frame {
 }
 
 impl Frame {
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
+	fn from_control_fields(control_fields: [u8; CONTROL_FIELDS_SIZE]) -> Result<Self, Error> {
 		match control_fields[0] & 0b0000_0011 {
 			0b0000_0011 => Ok(Frame::U(UFrame::from_control_fields(control_fields)?)),
 			0b0000_0001 => Ok(Frame::S(SFrame::from_control_fields(control_fields)?)),
@@ -69,7 +76,7 @@ impl Frame {
 		}
 	}
 
-	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Error> {
+	fn from_asdu(control_fields: [u8; CONTROL_FIELDS_SIZE], asdu: &[u8]) -> Result<Self, Error> {
 		Ok(Frame::I(IFrame::from_asdu(control_fields, asdu)?))
 	}
 
@@ -89,7 +96,7 @@ impl Frame {
 		// APDU payload must not exceed 253 bytes. Pre-fix `as u8`
 		// silently truncated, so an oversize ASDU went on the wire with
 		// a wrapped length field.
-		let payload_len = buffer.len() - 2;
+		let payload_len = buffer.len() - APDU_HEADER_SIZE;
 		if payload_len > APUD_MAX_LENGTH as usize {
 			return error::InvalidLength.fail();
 		}
@@ -110,7 +117,7 @@ pub struct IFrame {
 
 impl IFrame {
 	#[instrument]
-	fn from_asdu(control_fields: [u8; 4], asdu: &[u8]) -> Result<Self, Error> {
+	fn from_asdu(control_fields: [u8; CONTROL_FIELDS_SIZE], asdu: &[u8]) -> Result<Self, Error> {
 		if (control_fields[0] & 0b0000_0001) != 0 || (control_fields[2] & 0b0000_0001) != 0 {
 			return error::InvalidIFrameControlFields.fail();
 		}
@@ -119,7 +126,7 @@ impl IFrame {
 				control_fields[0..2].try_into().context(SizedSlice)?,
 			) >> 1,
 			receive_sequence_number: u16::from_le_bytes(
-				control_fields[2..4].try_into().context(SizedSlice)?,
+				control_fields[2..CONTROL_FIELDS_SIZE].try_into().context(SizedSlice)?,
 			) >> 1,
 			asdu: Asdu::parse(asdu).context(InvalidAsdu)?,
 		})
@@ -150,13 +157,13 @@ pub struct SFrame {
 
 impl SFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
+	fn from_control_fields(control_fields: [u8; CONTROL_FIELDS_SIZE]) -> Result<Self, Error> {
 		if control_fields[0] != 0b0000_0001 || control_fields[1] != 0b0000_0000 {
 			return error::InvalidSFrameControlFields.fail();
 		}
 		Ok(Self {
 			receive_sequence_number: u16::from_le_bytes(
-				control_fields[2..4].try_into().context(SizedSlice)?,
+				control_fields[2..CONTROL_FIELDS_SIZE].try_into().context(SizedSlice)?,
 			) >> 1,
 		})
 	}
@@ -198,7 +205,7 @@ pub struct UFrame {
 
 impl UFrame {
 	#[instrument]
-	fn from_control_fields(control_fields: [u8; 4]) -> Result<Self, Error> {
+	fn from_control_fields(control_fields: [u8; CONTROL_FIELDS_SIZE]) -> Result<Self, Error> {
 		if control_fields[1] != 0 || control_fields[2] != 0 || control_fields[3] != 0 {
 			return error::InvalidUFrameControlFields.fail();
 		}
@@ -258,7 +265,7 @@ mod tests {
 	fn test_s_frame() -> Result<(), Error> {
 		let bytes = [0x68, 0x04, 0x01, 0x00, 0x7E, 0x14];
 		let apdu = Apdu::from_bytes(&bytes)?;
-		assert_eq!(apdu.length, 4);
+		assert_eq!(apdu.length, CONTROL_FIELDS_SIZE as u8);
 
 		let Frame::S(s_frame) = &apdu.frame else { panic!("Frame was expected to be an S-frame") };
 		assert_eq!(s_frame.receive_sequence_number, 2623);
@@ -397,7 +404,7 @@ mod tests {
 	fn test_u_frame() -> Result<(), Error> {
 		let bytes = [0x68, 0x04, 0x01, 0x00, 0x7E, 0x14];
 		let apdu = Apdu::from_bytes(&bytes)?;
-		assert_eq!(apdu.length, 4);
+		assert_eq!(apdu.length, CONTROL_FIELDS_SIZE as u8);
 
 		Ok(())
 	}
@@ -405,16 +412,21 @@ mod tests {
 	#[test]
 	fn to_apdu_bytes_rejects_oversize_payload() {
 		use crate::{
-			asdu::Asdu,
-			types::{GenericObject, MMeNc1},
+			asdu::{ASDU_HEADER_SIZE, Asdu},
+			types::{ADDRESS_SIZE, GenericObject, MMeNc1},
 		};
 
-		// Build an I-frame whose ASDU exceeds the 253-byte payload
-		// limit. Each `M_ME_NC_1` is 5 bytes of payload + 3 bytes of IOA,
-		// non-sequence — 32 objects = 256 bytes of information objects,
-		// plus the 6-byte ASDU header = 262 bytes, well over 253.
-		let objects: Vec<GenericObject<MMeNc1>> =
-			(0_u32..32).map(|i| GenericObject { address: i, object: MMeNc1::default() }).collect();
+		// 32 non-sequence M_ME_NC_1 objects exceed APUD_MAX_LENGTH:
+		// ASDU_HEADER_SIZE + 32 * (ADDRESS_SIZE + TypeId::M_ME_NC_1.size()).
+		let object_count = 32_usize;
+		let asdu_body = ASDU_HEADER_SIZE + object_count * (ADDRESS_SIZE + TypeId::M_ME_NC_1.size());
+		assert!(
+			CONTROL_FIELDS_SIZE + asdu_body > APUD_MAX_LENGTH as usize,
+			"fixture must exceed APDU max length"
+		);
+		let objects: Vec<GenericObject<MMeNc1>> = (0_u32..object_count as u32)
+			.map(|i| GenericObject { address: i, object: MMeNc1::default() })
+			.collect();
 		let asdu = Asdu {
 			type_id: TypeId::M_ME_NC_1,
 			cot: Cot::SpontaneousData,
