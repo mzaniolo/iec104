@@ -325,3 +325,56 @@ async fn client_connect_rejects_invalid_k_w_ratio() {
 	let res = client.connect().await;
 	assert!(res.is_err(), "Client::connect must refuse w > 2k/3");
 }
+
+/// Build a single-point I-frame independently of the library encoder.
+fn single_point_frame(sequence: u16) -> Vec<u8> {
+	let [low, high] = (sequence << 1).to_le_bytes();
+	vec![0x68, 0x0e, low, high, 0, 0, 1, 1, 3, 0, 1, 0, 1, 0, 0, 1]
+}
+
+/// Exercise acknowledgement windows without outgoing ASDUs that could hide a
+/// missing S-frame through piggyback acknowledgement.
+async fn check_receive_ack_window(window: u16, frames: u16) {
+	let cfg = ServerConfig {
+		address: "127.0.0.1".to_owned(),
+		port: 0,
+		protocol: ProtocolConfig {
+			w: window,
+			t2: Duration::from_secs(30),
+			t3: Duration::from_secs(60),
+			..ProtocolConfig::default()
+		},
+		tls: None,
+	};
+	let (_server, addr) =
+		Server::start_with_listen_addr(cfg, NoopCallback).await.expect("start server");
+	let mut sock = TcpStream::connect(addr).await.expect("tcp connect");
+	sock.write_all(&START_DT_ACT_BYTES).await.expect("start transfer");
+	assert_eq!(read_apdu(&mut sock).await, START_DT_CON_BYTES);
+
+	// Exercise batches independently of how TCP splits/coalesces the write.
+	let bytes: Vec<u8> = (0..frames).flat_map(single_point_frame).collect();
+	sock.write_all(&bytes).await.expect("send I-frames");
+	for acknowledged in (window..=frames).step_by(usize::from(window)) {
+		let reply = timeout(Duration::from_secs(2), read_apdu(&mut sock))
+			.await
+			.expect("acknowledge at w without waiting for t2 or another frame");
+		let [low, high] = (acknowledged << 1).to_le_bytes();
+		assert_eq!(reply, [0x68, 0x04, 0x01, 0x00, low, high]);
+	}
+}
+
+#[tokio::test]
+async fn server_acknowledges_exactly_w_received_frames() {
+	check_receive_ack_window(8, 8).await;
+}
+
+#[tokio::test]
+async fn server_acknowledges_each_window_in_a_batch() {
+	check_receive_ack_window(2, 6).await;
+}
+
+#[tokio::test]
+async fn server_acknowledges_each_frame_when_w_is_one() {
+	check_receive_ack_window(1, 3).await;
+}
