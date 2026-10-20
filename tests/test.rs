@@ -8,6 +8,8 @@
 
 mod integration;
 mod protocol;
+#[cfg(any(feature = "native_tls", feature = "rustls"))]
+mod tls_handshake;
 
 /// Shared helpers for RTU server integration tests.
 use std::{sync::Arc, time::Duration};

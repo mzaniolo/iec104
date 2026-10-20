@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use crate::{
 	Connection, asdu::Asdu, config::ServerConfig, error::Error,
@@ -10,12 +10,33 @@ pub mod error;
 
 use snafu::{ResultExt as _, whatever};
 use tokio::{
-	net::TcpListener,
+	net::{TcpListener, TcpStream},
 	sync::{mpsc, oneshot},
 };
 
 #[cfg(any(feature = "native_tls", feature = "rustls"))]
 use crate::tls::TlsServerAcceptor;
+
+/// How long the accept loop pauses after an accept failure that is not tied
+/// to a single connection attempt, so it does not spin while the listener
+/// stays readable.
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
+
+/// Whether an accept error is specific to the connection attempt that just
+/// failed.
+///
+/// Those are safe to retry immediately: the peer went away and the next
+/// accept will make progress. Anything else (running out of file descriptors
+/// or buffers, for instance) leaves the listener readable, so retrying
+/// without a pause would spin the loop at full speed.
+fn is_per_connection_accept_error(error: &std::io::Error) -> bool {
+	matches!(
+		error.kind(),
+		std::io::ErrorKind::ConnectionAborted
+			| std::io::ErrorKind::ConnectionReset
+			| std::io::ErrorKind::Interrupted
+	)
+}
 
 /// Identifies a connection so it can be removed from the list when it
 /// terminates.
@@ -31,9 +52,63 @@ impl ConnectionId {
 	}
 }
 
+/// A freshly accepted socket whose transport is not negotiated yet.
+///
+/// Building this is synchronous so the accept loop never awaits on a peer.
+/// The handshake itself happens in the connection's own task through
+/// [`Self::establish`].
+pub(crate) enum PendingConnection {
+	/// Plain TCP; nothing left to negotiate.
+	Tcp(TcpStream),
+	/// TLS; the handshake still has to run.
+	#[cfg(any(feature = "native_tls", feature = "rustls"))]
+	Tls {
+		/// The accepted socket.
+		socket: TcpStream,
+		/// The acceptor to run the handshake with.
+		acceptor: crate::tls::TlsAcceptor,
+	},
+}
+
+impl PendingConnection {
+	/// Negotiates the transport, bounded by `handshake_timeout` so a peer that
+	/// connects but never completes the TLS handshake cannot hold the
+	/// connection slot forever.
+	#[cfg_attr(
+		not(any(feature = "native_tls", feature = "rustls")),
+		expect(clippy::unused_async, reason = "the TLS branch is compiled out")
+	)]
+	pub(crate) async fn establish(
+		self,
+		#[cfg_attr(
+			not(any(feature = "native_tls", feature = "rustls")),
+			expect(unused_variables, reason = "the TLS branch is compiled out")
+		)]
+		handshake_timeout: Duration,
+	) -> Result<Connection, Error> {
+		match self {
+			Self::Tcp(socket) => Ok(Connection::Tcp(socket)),
+			#[cfg(any(feature = "native_tls", feature = "rustls"))]
+			Self::Tls { socket, acceptor } => {
+				let stream = tokio::time::timeout(handshake_timeout, acceptor.accept(socket))
+					.await
+					.whatever_context("Timeout doing the TLS handshake")?
+					.whatever_context("Error doing the TLS handshake")?;
+				Ok(Connection::Tls(Box::new(stream)))
+			}
+		}
+	}
+}
+
 #[async_trait::async_trait]
 pub trait ServerCallback {
 	async fn on_new_objects(&self, asdu: Asdu, id: ConnectionId, address: SocketAddr);
+	/// Called once the transport is up: immediately for plain TCP, and only
+	/// after the TLS handshake succeeds when TLS is enabled.
+	///
+	/// Runs on the connection's own task, so a slow callback delays only that
+	/// connection. A peer that never completes the handshake does not trigger
+	/// this callback.
 	async fn on_new_connection(&self, address: SocketAddr) {
 		tracing::debug!("New connection from {address}");
 	}
@@ -62,6 +137,9 @@ impl<C: ServerCallback + Send + Sync> ReceiveHandlerCallback for InnerServerCall
 }
 
 impl<C: ServerCallback + Send + Sync> InnerServerCallback<C> {
+	async fn on_new_connection(&self, address: SocketAddr) {
+		self.callback.on_new_connection(address).await;
+	}
 	async fn on_connection_started(&self, id: ConnectionId, address: SocketAddr) {
 		self.callback.on_connection_started(id, address).await;
 	}
@@ -198,30 +276,38 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 		loop {
 			tokio::select! {
 				accept_result = self.listener.accept() => {
-					let (socket, address) =
-						accept_result.whatever_context("Error accepting a new connection")?;
-					let connection = {
+					// A failure here is about this connection attempt or a
+					// transient resource shortage, never a reason to take the
+					// whole server down.
+					let (socket, address) = match accept_result {
+						Ok(accepted) => accepted,
+						Err(e) => {
+							tracing::warn!("Error accepting a new connection: {e}");
+							if !is_per_connection_accept_error(&e) {
+								tokio::time::sleep(ACCEPT_BACKOFF).await;
+							}
+							continue;
+						}
+					};
+					// The TLS handshake is deliberately not awaited here; it
+					// runs in the connection's own task so a stalled peer
+					// cannot block accepting, reaping or send commands.
+					let pending = {
 						#[cfg(any(feature = "native_tls", feature = "rustls"))]
 						{
 							match &self.acceptor {
-								Some(acceptor) => Connection::Tls(Box::new(
-									acceptor
-										.clone()
-										.accept(socket)
-										.await
-										.whatever_context("Error doing the TLS handshake")?,
-								)),
-								None => Connection::Tcp(socket),
+								Some(acceptor) => PendingConnection::Tls {
+									socket,
+									acceptor: acceptor.clone(),
+								},
+								None => PendingConnection::Tcp(socket),
 							}
 						}
 						#[cfg(not(any(feature = "native_tls", feature = "rustls")))]
 						{
-							Connection::Tcp(socket)
+							PendingConnection::Tcp(socket)
 						}
 					};
-					// TODO: Do we want to accept or decline the connection based on the callback response?
-					self.callback.on_new_connection(address).await;
-
 					// TODO: Do want to have a max number of connections?
 
 					// Gets the next available connection id
@@ -232,7 +318,7 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerServer<C> {
 					let id = next_id;
 					next_id = next_id.next();
 					let callback = InnerServerCallback { id, address, callback: self.callback.clone() };
-					let connection_handler = ConnectionHandler::start(id, address, connection, self.config.clone(), callback, closed_tx.clone());
+					let connection_handler = ConnectionHandler::start(id, address, pending, self.config.clone(), callback, closed_tx.clone());
 					self.connections.insert(id, connection_handler);
 				}
 				closed_id = closed_rx.recv() => {

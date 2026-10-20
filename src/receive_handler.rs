@@ -491,12 +491,12 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 				// In-session StartDT-ACT is a protocol error per §5.3:
 				// data transfer is already started, so re-confirming would
 				// mask a peer fault. Close the connection instead.
-				whatever!("Received StartDT activation while data transfer is already started")
+				whatever!("Received StartDT activation while data transfer is already started");
 			}
 			(false, false, false, true, false, false) => {
 				// StartDT-CON arriving outside `send_start_dt` is unexpected
 				// for an established session.
-				whatever!("Received unsolicited StartDT confirmation")
+				whatever!("Received unsolicited StartDT confirmation");
 			}
 			(false, false, false, false, true, false) => {
 				send_frame(&mut self.write_connection, &STOP_DT_CON_FRAME)
@@ -508,7 +508,9 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 				tracing::debug!("StopDT confirmation");
 				Ok(true)
 			}
-			_ => whatever!("Invalid U-frame: zero or multiple flags set: {u:?}"),
+			_ => {
+				whatever!("Invalid U-frame: zero or multiple flags set: {u:?}");
+			},
 		}
 	}
 

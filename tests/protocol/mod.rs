@@ -122,6 +122,7 @@ async fn start_bare_server() -> (Server, SocketAddr) {
 		port: 0,
 		protocol: ProtocolConfig::default(),
 		tls: None,
+		..ServerConfig::default()
 	};
 	Server::start_with_listen_addr(cfg, NoopCallback).await.expect("start server")
 }
@@ -308,6 +309,7 @@ async fn server_start_rejects_invalid_k_w_ratio() {
 		// k=12 → max_w = 8; w=9 violates the spec.
 		protocol: ProtocolConfig { k: 12, w: 9, ..ProtocolConfig::default() },
 		tls: None,
+		..ServerConfig::default()
 	};
 	let res = Server::start_with_listen_addr(cfg, NoopCallback).await;
 	assert!(res.is_err(), "Server::start must refuse w > 2k/3");

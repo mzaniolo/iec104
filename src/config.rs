@@ -137,6 +137,11 @@ pub struct ServerConfig {
 	/// The TLS configuration.
 	#[serde(default)]
 	pub tls: Option<TlsServerConfig>,
+	/// Maximum time allowed for a client to complete the TLS handshake.
+	/// Prevents a peer that connects but never negotiates from holding a
+	/// connection slot. Default is 10 seconds.
+	#[serde(with = "humantime_serde", default = "default_duration::<10>")]
+	pub tls_handshake_timeout: Duration,
 }
 
 /// The server TLS configuration
@@ -182,6 +187,7 @@ impl Default for ServerConfig {
 			port: 2404,
 			protocol: ProtocolConfig::default(),
 			tls: None,
+			tls_handshake_timeout: Duration::from_secs(10),
 		}
 	}
 }

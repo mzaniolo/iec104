@@ -5,14 +5,11 @@ use std::{
 
 use atomic_enum::atomic_enum;
 use snafu::{ResultExt as _, whatever};
-use tokio::{
-	io::{ReadHalf, WriteHalf},
-	sync::{mpsc, oneshot},
-};
+use tokio::sync::{mpsc, oneshot};
 
 use super::ConnectionId;
 use crate::{
-	Connection, START_DT_CON_FRAME, TEST_FR_CON_FRAME,
+	START_DT_CON_FRAME, TEST_FR_CON_FRAME,
 	apdu::{Frame, MAX_APDU_FRAME_SIZE},
 	asdu::Asdu,
 	config::ServerConfig,
@@ -20,7 +17,7 @@ use crate::{
 	receive_handler::{
 		ReceiveHandler, ReceiveHandlerCommand, SendAsduQueueError, receive_apdu, send_frame,
 	},
-	server::{InnerServerCallback, ServerCallback, error},
+	server::{InnerServerCallback, PendingConnection, ServerCallback, error},
 };
 
 #[atomic_enum]
@@ -41,8 +38,7 @@ pub struct ConnectionHandler {
 }
 
 struct InnerConnectionHandler<C: ServerCallback + Send + Sync + 'static> {
-	read_connection: ReadHalf<Connection>,
-	write_connection: WriteHalf<Connection>,
+	pending: PendingConnection,
 	callback: Arc<InnerServerCallback<C>>,
 	config: ServerConfig,
 	rx: mpsc::Receiver<ReceiveHandlerCommand>,
@@ -55,17 +51,15 @@ impl ConnectionHandler {
 	pub fn start<C: ServerCallback + Send + Sync + 'static>(
 		id: ConnectionId,
 		address: SocketAddr,
-		connection: Connection,
+		pending: PendingConnection,
 		config: ServerConfig,
 		callback: InnerServerCallback<C>,
 		tx: mpsc::UnboundedSender<ConnectionId>,
 	) -> Self {
-		let (read_connection, write_connection) = tokio::io::split(connection);
 		let (cmd_tx, rx) = mpsc::channel(1024);
 		let state = Arc::new(AtomicConnectionState::new(ConnectionState::WaitingStartDT));
 		let inner_connection_handler = InnerConnectionHandler {
-			read_connection,
-			write_connection,
+			pending,
 			callback: Arc::new(callback),
 			config,
 			rx,
@@ -102,6 +96,19 @@ impl ConnectionHandler {
 
 impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 	pub async fn start(mut self) -> Result<(), Error> {
+		// The transport is negotiated here rather than on the server's accept
+		// loop, so a peer that stalls the TLS handshake only stalls itself.
+		let handshake_timeout = self.config.tls_handshake_timeout;
+		let connection = match self.pending.establish(handshake_timeout).await {
+			Ok(connection) => connection,
+			Err(e) => {
+				self.callback.on_error(&e).await;
+				return Err(e);
+			}
+		};
+		let (mut read_connection, mut write_connection) = tokio::io::split(connection);
+		self.callback.on_new_connection(self.address).await;
+
 		let mut buffer = [0; MAX_APDU_FRAME_SIZE];
 		let out_buffer_full = Arc::new(AtomicBool::new(false));
 
@@ -110,7 +117,7 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 				ConnectionState::WaitingStartDT => {
 					let apdu = tokio::time::timeout(
 						self.config.protocol.t1,
-						receive_apdu(&mut self.read_connection, &mut buffer),
+						receive_apdu(&mut read_connection, &mut buffer),
 					)
 					.await
 					.whatever_context("Timeout waiting for startDT activation")?
@@ -123,7 +130,7 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 					// and closes the connection.
 					match apdu.frame {
 						Frame::U(u) if u.start_dt_activation => {
-							send_frame(&mut self.write_connection, &START_DT_CON_FRAME)
+							send_frame(&mut write_connection, &START_DT_CON_FRAME)
 								.await
 								.whatever_context("Error sending startDT confirmation")?;
 							self.state.store(
@@ -132,21 +139,23 @@ impl<C: ServerCallback + Send + Sync + 'static> InnerConnectionHandler<C> {
 							);
 						}
 						Frame::U(u) if u.test_fr_activation => {
-							send_frame(&mut self.write_connection, &TEST_FR_CON_FRAME)
+							send_frame(&mut write_connection, &TEST_FR_CON_FRAME)
 								.await
 								.whatever_context("Error sending testFR confirmation")?;
 						}
-						_ => whatever!(
-							"Unexpected frame while waiting for startDT activation: {:?}",
-							apdu.frame
-						),
+						_ => {
+							whatever!(
+								"Unexpected frame while waiting for startDT activation: {:?}",
+								apdu.frame
+							);
+						},
 					}
 				}
 				ConnectionState::Started => {
 					self.callback.on_connection_started(self.id, self.address).await;
 					let rcv_handler = ReceiveHandler::new(
-						&mut self.read_connection,
-						&mut self.write_connection,
+						&mut read_connection,
+						&mut write_connection,
 						self.callback.clone(),
 						self.config.protocol.clone(),
 						&mut self.rx,

@@ -173,9 +173,11 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 				)))
 			}
 			#[cfg(not(any(feature = "native_tls", feature = "rustls")))]
-			Some(_) => whatever!(
-				"TLS support is disabled; enable the `native_tls` or `rustls` Cargo feature"
-			),
+			Some(_) => {
+					whatever!(
+					"TLS support is disabled; enable the `native_tls` or `rustls` Cargo feature"
+				);
+			},
 		}
 	}
 
@@ -199,7 +201,9 @@ impl<C: ClientCallback + Send + Sync + 'static> ConnectionHandler<C> {
 		// or any other U-frame variant is a protocol violation.
 		match apdu.frame {
 			Frame::U(u) if u.start_dt_confirmation => Ok(()),
-			frame => whatever!("StartDT activation not confirmed; received {frame:?}"),
+			frame => {
+				whatever!("StartDT activation not confirmed; received {frame:?}");
+			},
 		}
 	}
 }

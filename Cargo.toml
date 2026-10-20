@@ -1,6 +1,6 @@
 [package]
 name = "iec104"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 authors = ["Matheus Zaniolo <mgzaniolo@gmail.com>"]
 description = "A rust implementation of the IEC-60870-5-104 protocol."
@@ -64,6 +64,9 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
 async-trait = "0.1.88"
+# `aws_lc_rs` is what lets rcgen generate RSA keys. native-tls on macOS
+# rejects the ECDSA PKCS#8 key rcgen emits by default.
+rcgen = { version = "0.14", features = ["aws_lc_rs"] }
 tokio = { version = "1.47.0", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [lints.rust]
