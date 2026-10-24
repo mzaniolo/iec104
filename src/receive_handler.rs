@@ -67,7 +67,8 @@ fn check_sequence_acknowledge(
 			return Ok(());
 		}
 	} else {
-		// If we cant get the first and last members it means that the vector is empty
+		// If we cant get the first and last members it means that the vector is
+		// empty
 		if frame_rss == sent_counter {
 			return Ok(());
 		}
@@ -254,6 +255,11 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 								if new_t2_instant < self.t2.deadline() {
 									self.t2.as_mut().reset(new_t2_instant);
 								}
+								// Check each I-frame, including frames coalesced in one read.
+								// A queued outgoing I-frame may already have acknowledged it.
+								if self.unacknowledged_rcv_frames >= self.config.w {
+									self.confirm_all_messages().await?;
+								}
 								self.callback.on_new_objects(i.asdu).await;
 							}
 							Frame::S(s) => {
@@ -309,12 +315,6 @@ impl<'a, C: ReceiveHandlerCallback> ReceiveHandler<'a, C> {
 				_ = &mut self.t1_i => {
 					whatever!("t1 for i frames timeout");
 				}
-			}
-			if self.unacknowledged_rcv_frames > self.config.w {
-				tracing::debug!(
-					"Received more than w frames without acknowledgement. Sending S frame"
-				);
-				self.confirm_all_messages().await?;
 			}
 		}
 	}
